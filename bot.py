@@ -8,10 +8,9 @@ from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
 from aiogram.utils import executor
 from flask import Flask, request
 
-# 🔐 TOKEN
+# 🔐 TOKEN (keyin almashtir!)
 API_TOKEN = "8631309919:AAHmHJWlRqiXKBiMkrPIxvd1LyHrm6MPIvc"
 
-# 🔥 Checkout
 MERCHANT_ID = "MTdiZDIzOTRkYjAzN2UyM2U0ZmE"
 
 bot = Bot(token=API_TOKEN)
@@ -36,7 +35,7 @@ async def start(msg: types.Message):
 async def balans(msg: types.Message):
     await msg.answer("Balansingiz: 0 so‘m", reply_markup=balans_menu)
 
-# 💳 TO‘LOV YARATISH
+# 💳 TO‘LOV
 @dp.message_handler(lambda msg: msg.text == "➕ Hisobni to‘ldirish")
 async def pay(msg: types.Message):
     amount = 1000
@@ -55,23 +54,34 @@ async def pay(msg: types.Message):
         }
     }
 
-    response = requests.post(url, json=data, headers=headers)
-
-    print("STATUS:", response.status_code)
-    print("TEXT:", response.text)
-
     try:
+        response = requests.post(url, json=data, headers=headers)
+
+        print("STATUS:", response.status_code)
+        print("FULL RESPONSE:", response.text)
+
         res = response.json()
+
+        pay_url = None
+
+        if "pay_url" in res:
+            pay_url = res["pay_url"]
+        elif "data" in res and "pay_url" in res["data"]:
+            pay_url = res["data"]["pay_url"]
+        elif "url" in res:
+            pay_url = res["url"]
+
+        if pay_url:
+            await msg.answer(f"💳 To‘lov qilish:\n{pay_url}")
+            return
+
     except:
-        await msg.answer("❌ API xato (JSON emas)")
-        return
+        print("API ishlamadi")
 
-    pay_url = res.get("data", {}).get("pay_url")
+    # 🔥 fallback (oddiy link)
+    fallback_url = f"https://checkout.uz/pay?merchant_id={MERCHANT_ID}&amount={amount}&account[user_id]={msg.from_user.id}"
 
-    if pay_url:
-        await msg.answer(f"💳 To‘lov qilish:\n{pay_url}")
-    else:
-        await msg.answer("❌ To‘lov link kelmadi")
+    await msg.answer(f"💳 To‘lov qilish (fallback):\n{fallback_url}")
 
 # 🔔 WEBHOOK
 @app.route('/webhook', methods=['POST'])
