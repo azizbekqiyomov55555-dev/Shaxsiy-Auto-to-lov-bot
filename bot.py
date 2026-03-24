@@ -1,58 +1,61 @@
 import logging
-import hashlib
 import asyncio
 import aiohttp
-from aiogram import Bot, Dispatcher, types, F
+from aiogram import Bot, Dispatcher, types
 from aiogram.filters import Command
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-from aiohttp import web
 import os
 
 # --- KONFIGURATSIYA ---
 API_TOKEN = '8631309919:AAHmHJWlRqiXKBiMkrPIxvd1LyHrm6MPIvc'
-KASSA_ID = "46"
-SECRET_KEY = "N2MxYjNkYmI4ZjdlYjVjMWYxZTM" # Dashboarddagi API Secret Key
+KASSA_ID = 46  # Integer bo'lgani yaxshi
+SECRET_KEY = "N2MxYjNkYmI4ZjdlYjVjMWYxZTM"
 
 logging.basicConfig(level=logging.INFO)
 bot = Bot(token=API_TOKEN)
 dp = Dispatcher()
 
-# --- API ORQALI PROFESSIONAL TO'LOV LINKINI OLISH ---
+# --- API ORQALI TO'LOV LINKINI OLISH ---
 async def get_checkout_url(amount, order_id):
     url = "https://api.checkout.uz/api/v1/payment/create"
     headers = {
         "Authorization": f"Bearer {SECRET_KEY}",
-        "Content-Type": "application/json"
+        "Content-Type": "application/json",
+        "Accept": "application/json"
     }
+    
     payload = {
-        "amount": amount,
-        "order_id": order_id,
-        "kassa_id": int(KASSA_ID)
+        "amount": int(amount), # Checkout.uz odatda so'mda qabul qiladi
+        "order_id": str(order_id),
+        "kassa_id": KASSA_ID,
+        "return_url": "https://t.me/SizningBotUsername" # SHU YERGA BOTINGIZNI LINKINI YOZING
     }
 
     async with aiohttp.ClientSession() as session:
         try:
             async with session.post(url, json=payload, headers=headers) as response:
+                status_code = response.status
                 result = await response.json()
-                if result.get("status") == True:
+                
+                if status_code == 200 and result.get("status") == True:
                     return result.get("payment_url")
                 else:
-                    logging.error(f"API Xatosi: {result}")
+                    # Konsolda xatoni ko'rish uchun:
+                    logging.error(f"API Xatosi (Status {status_code}): {result}")
                     return None
         except Exception as e:
-            logging.error(f"API bilan bog'lanishda xato: {e}")
+            logging.error(f"Ulanishda xato: {e}")
             return None
 
 # --- BOT BUYRUQLARI ---
 @dp.message(Command("start"))
 async def start_handler(message: types.Message):
     amount = 11500
-    # Buyurtma ID raqami noyob bo'lishi shart (masalan, foydalanuvchi ID va xabar vaqti)
-    unique_order_id = f"{message.from_user.id}{message.message_id}"
+    # Noyob order_id yaratish
+    unique_order_id = f"ID_{message.from_user.id}_{message.message_id}"
     
-    await message.answer("⏳ To'lov havolasi tayyorlanmoqda...")
+    msg = await message.answer("⏳ To'lov havolasi tayyorlanmoqda...")
     
-    # API dan professional linkni olamiz
     pay_url = await get_checkout_url(amount, unique_order_id)
     
     if pay_url:
@@ -66,34 +69,17 @@ async def start_handler(message: types.Message):
             f"🌟 <b>Stars: 50</b>\n"
             f"💵 <b>Narxi: {amount} so'm</b>\n"
             f"👤 <b>Username: @{username}</b>\n\n"
-            "Tugmani bosing va ochilgan professional sahifada to'lovni bajaring."
+            "Tugmani bosing va to'lovni amalga oshiring."
         )
-        await message.answer(text, reply_markup=keyboard, parse_mode="HTML")
+        await msg.edit_text(text, reply_markup=keyboard, parse_mode="HTML")
     else:
-        await message.answer("❌ To'lov tizimiga ulanishda xatolik yuz berdi. Iltimos, keyinroq urunib ko'ring.")
-
-# --- WEBHOOK (TO'LOVNI TASDIQLASH) ---
-async def handle_webhook(request):
-    try:
-        # Checkout.uz to'lovdan so'ng sizning webhookingizga POST yuboradi
-        data = await request.post()
-        # To'lov ma'lumotlarini tekshirish logikasi shu yerda bo'ladi
-        return web.Response(text="OK")
-    except:
-        return web.Response(text="Error", status=500)
+        await msg.edit_text("❌ To'lov tizimida texnik xatolik. Iltimos, keyinroq urinib ko'ring yoki admin bilan bog'laning.")
 
 async def main():
-    app = web.Application()
-    app.router.add_post('/webhook/checkout', handle_webhook)
-    runner = web.AppRunner(app)
-    await runner.setup()
-    
-    # Railway yoki boshqa hosting uchun portni sozlash
-    port = int(os.environ.get("PORT", 8080))
-    site = web.TCPSite(runner, '0.0.0.0', port)
-    await site.start()
-    
     await dp.start_polling(bot)
 
 if __name__ == '__main__':
-    asyncio.run(main())
+    try:
+        asyncio.run(main())
+    except (KeyboardInterrupt, SystemExit):
+        logging.info("Bot to'xtatildi")
