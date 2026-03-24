@@ -1,5 +1,6 @@
 import logging
 import requests
+import asyncio
 from aiogram import Bot, Dispatcher, types
 from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
 from aiogram.utils import executor
@@ -33,7 +34,7 @@ async def start(msg: types.Message):
 async def balans(msg: types.Message):
     await msg.answer("Balansingiz: 0 so‘m", reply_markup=balans_menu)
 
-# 💳 To‘ldirish
+# 💳 To‘lov yaratish
 @dp.message_handler(lambda msg: msg.text == "➕ Hisobni to‘ldirish")
 async def pay(msg: types.Message):
     amount = 1000
@@ -49,20 +50,30 @@ async def pay(msg: types.Message):
     response = requests.post(CHECKOUT_API, json=data)
     res = response.json()
 
+    print(res)  # 🔥 DEBUG
+
     pay_url = res.get("pay_url")
 
-    await msg.answer(f"To‘lov qilish uchun link:\n{pay_url}")
+    if pay_url:
+        await msg.answer(f"💳 To‘lov qilish:\n{pay_url}")
+    else:
+        await msg.answer("❌ Xatolik: link kelmadi")
 
-# 🔔 WEBHOOK (Checkout signal yuboradi)
+# 🔔 WEBHOOK (ENG MUHIM QISM)
 @app.route('/webhook', methods=['POST'])
 def webhook():
     data = request.json
+    print("Webhook keldi:", data)  # 🔥 DEBUG
 
+    # 🔥 TO‘G‘RI FIELDLARNI OLAMIZ
     status = data.get("status")
-    user_id = data.get("account", {}).get("user_id")
+    account = data.get("account", {})
+    user_id = account.get("user_id")
 
-    if status == "paid":
-        bot.send_message(user_id, "✅ To‘lov qabul qilindi!")
+    # 🔥 BA'ZIDA STATUS BOSHQA BO‘LADI
+    if status in ["paid", "success"]:
+        if user_id:
+            asyncio.run(bot.send_message(user_id, "✅ To‘lov qabul qilindi!"))
 
     return "OK"
 
