@@ -18,6 +18,9 @@ dp = Dispatcher(bot)
 
 app = Flask(__name__)
 
+# 🧠 vaqtinchalik balans (RAM)
+users_balance = {}
+
 # 🔘 Tugmalar
 menu = ReplyKeyboardMarkup(resize_keyboard=True)
 menu.add(KeyboardButton("💰 Balans"))
@@ -28,14 +31,18 @@ balans_menu.add(KeyboardButton("➕ Hisobni to‘ldirish"))
 # 🟢 START
 @dp.message_handler(commands=['start'])
 async def start(msg: types.Message):
+    if msg.from_user.id not in users_balance:
+        users_balance[msg.from_user.id] = 0
+
     await msg.answer("Xush kelibsiz!", reply_markup=menu)
 
-# 💰 Balans
+# 💰 BALANS
 @dp.message_handler(lambda msg: msg.text == "💰 Balans")
 async def balans(msg: types.Message):
-    await msg.answer("Balansingiz: 0 so‘m", reply_markup=balans_menu)
+    bal = users_balance.get(msg.from_user.id, 0)
+    await msg.answer(f"Balansingiz: {bal} so‘m", reply_markup=balans_menu)
 
-# 💳 TO‘LOV
+# 💳 TO‘LOV YARATISH
 @dp.message_handler(lambda msg: msg.text == "➕ Hisobni to‘ldirish")
 async def pay(msg: types.Message):
     amount = 1000
@@ -54,40 +61,29 @@ async def pay(msg: types.Message):
         }
     }
 
+    response = requests.post(url, json=data, headers=headers)
+
+    print("STATUS:", response.status_code)
+    print("FULL RESPONSE:", response.text)
+
     try:
-        response = requests.post(url, json=data, headers=headers)
-
-        print("STATUS:", response.status_code)
-        print("FULL RESPONSE:", response.text)
-
         res = response.json()
-
-        pay_url = None
-
-        if "pay_url" in res:
-            pay_url = res["pay_url"]
-        elif "data" in res and "pay_url" in res["data"]:
-            pay_url = res["data"]["pay_url"]
-        elif "url" in res:
-            pay_url = res["url"]
-
-        if pay_url:
-            await msg.answer(f"💳 To‘lov qilish:\n{pay_url}")
-            return
-
     except:
-        print("API ishlamadi")
+        await msg.answer("❌ API xato (JSON emas)")
+        return
 
-    # 🔥 fallback (oddiy link)
-    fallback_url = f"https://checkout.uz/pay?merchant_id={MERCHANT_ID}&amount={amount}&account[user_id]={msg.from_user.id}"
+    pay_url = res.get("data", {}).get("pay_url")
 
-    await msg.answer(f"💳 To‘lov qilish (fallback):\n{fallback_url}")
+    if pay_url:
+        await msg.answer(f"💳 To‘lov qilish:\n{pay_url}")
+    else:
+        await msg.answer("❌ To‘lov link kelmadi")
 
-# 🔔 WEBHOOK
+# 🔔 WEBHOOK (TO‘LOV KELGANI)
 @app.route('/webhook', methods=['POST'])
 def webhook():
     data = request.json
-    print("Webhook:", data)
+    print("Webhook keldi:", data)
 
     status = data.get("status")
     account = data.get("account", {})
@@ -95,7 +91,15 @@ def webhook():
 
     if status in ["paid", "success"]:
         if user_id:
-            asyncio.run(bot.send_message(int(user_id), "✅ To‘lov qabul qilindi!"))
+            user_id = int(user_id)
+
+            # 💰 balans qo‘shish
+            users_balance[user_id] = users_balance.get(user_id, 0) + 1000
+
+            asyncio.run(bot.send_message(
+                user_id,
+                f"✅ To‘lov qabul qilindi!\n💰 +1000 so‘m qo‘shildi"
+            ))
 
     return "OK"
 
