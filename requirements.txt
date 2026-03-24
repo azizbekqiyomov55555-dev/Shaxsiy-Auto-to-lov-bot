@@ -1,4 +1,4 @@
 aiogram==2.25.1
-aiohttp==3.8.6
-flask
-requests
+aiohttp==3.8.5
+flask==2.2.5
+requests==2.31.0
