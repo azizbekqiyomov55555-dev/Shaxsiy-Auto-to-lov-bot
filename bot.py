@@ -5,34 +5,31 @@ from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
 from aiogram.utils import executor
 from flask import Flask, request
 
-# 🔑 TOKEN
 API_TOKEN = "8631309919:AAHmHJWlRqiXKBiMkrPIxvd1LyHrm6MPIvc"
-
-# 🔥 CHECKOUT
 MERCHANT_ID = "MTdiZDIzOTRkYjAzN2UyM2U0ZmE"
 
 bot = Bot(token=API_TOKEN)
 dp = Dispatcher(bot)
 app = Flask(__name__)
 
-# 🔘 MENU
+# MENU
 menu = ReplyKeyboardMarkup(resize_keyboard=True)
 menu.add(KeyboardButton("💰 Balans"))
 
 balans_menu = ReplyKeyboardMarkup(resize_keyboard=True)
 balans_menu.add(KeyboardButton("➕ Hisobni to‘ldirish"))
 
-# 🟢 START
+# START
 @dp.message_handler(commands=['start'])
 async def start(msg: types.Message):
     await msg.answer("Xush kelibsiz!", reply_markup=menu)
 
-# 💰 BALANS
+# BALANS
 @dp.message_handler(lambda msg: msg.text == "💰 Balans")
 async def balans(msg: types.Message):
     await msg.answer("Balansingiz: 0 so‘m", reply_markup=balans_menu)
 
-# 💳 TO‘LOV LINK
+# TO‘LOV LINK
 @dp.message_handler(lambda msg: msg.text == "➕ Hisobni to‘ldirish")
 async def pay(msg: types.Message):
     amount = 1000
@@ -49,7 +46,15 @@ async def pay(msg: types.Message):
 
     try:
         response = requests.post(url, json=data)
-        print("RAW:", response.text)
+
+        # 🔥 MUHIM: avval textni ko‘ramiz
+        print("STATUS:", response.status_code)
+        print("TEXT:", response.text)
+
+        # Agar JSON bo‘lmasa xatolik chiqmasin
+        if "application/json" not in response.headers.get("Content-Type", ""):
+            await msg.answer("❌ API JSON qaytarmadi (checkout sozlanmagan)")
+            return
 
         res = response.json()
 
@@ -64,7 +69,7 @@ async def pay(msg: types.Message):
         print("XATOLIK:", e)
         await msg.answer("❌ Xatolik yuz berdi")
 
-# 🔔 WEBHOOK
+# WEBHOOK
 @app.route('/webhook', methods=['POST'])
 def webhook():
     data = request.json
@@ -79,7 +84,7 @@ def webhook():
 
     return "OK"
 
-# 🚀 RUN
+# RUN
 if __name__ == '__main__':
     from threading import Thread
 
