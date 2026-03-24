@@ -1,0 +1,443 @@
+<!DOCTYPE html>
+<html lang="uz">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>SOTIB OLISH - PRO</title>
+    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;700;800;900&display=swap" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    
+    <style>
+        body { background: linear-gradient(-45deg, #050507, #1a0b2e, #0a1128, #001f3f); background-size: 400% 400%; animation: gradientBG 15s ease infinite; color: #ffffff; font-family: 'Montserrat', sans-serif; min-height: 100vh; display: flex; flex-direction: column; align-items: center; padding-bottom: 50px; overflow-x: hidden; }
+        @keyframes gradientBG { 0% { background-position: 0% 50%; } 50% { background-position: 100% 50%; } 100% { background-position: 0% 50%; } }
+        .glass-panel { background: rgba(11, 12, 16, 0.6); backdrop-filter: blur(10px); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 20px; box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37); }
+        .profile-container { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 15px; margin-top: 40px; margin-bottom: 40px; text-align: center; }
+        .profile-img { width: 90px; height: 90px; border-radius: 50%; border: 3px solid #00f2fe; object-fit: cover; box-shadow: 0 0 20px rgba(0, 242, 254, 0.6); transition: transform 0.3s; }
+        .profile-name { color: #a8ff78; font-size: 24px; font-weight: 900; letter-spacing: 1px; text-shadow: 0 0 15px rgba(168, 255, 120, 0.6); line-height: 1.3; }
+        .custom-btn { background: rgba(11, 12, 16, 0.8); backdrop-filter: blur(5px); width: 100%; max-width: 350px; margin: 0 auto 20px auto; padding: 22px 0; border-radius: 14px; text-align: center; font-size: 20px; font-weight: 900; letter-spacing: 1px; color: #ffffff; position: relative; cursor: pointer; box-shadow: 0 8px 25px rgba(0,0,0,0.5); overflow: hidden; border: 1px solid rgba(255,255,255,0.1); display: flex; align-items: center; justify-content: center; gap: 12px; }
+        .btn-line { position: absolute; height: 4px; left: 15%; right: 15%; border-radius: 5px; background: linear-gradient(90deg, #ff007a, #8a2be2, #00bfff, #00ff88, #ff007a); background-size: 300% 100%; animation: run-light 1.5s linear infinite; }
+        .line-top { top: 0; } .line-bottom { bottom: 0; animation-direction: reverse; }
+        @keyframes run-light { 0% { background-position: 100% 0; } 100% { background-position: 0 0; } }
+        .social-container { display: flex; justify-content: center; gap: 20px; margin-top: 30px; }
+        .social-btn { position: relative; width: 70px; height: 70px; background-color: #0b0c10; border-radius: 20px; display: flex; align-items: center; justify-content: center; font-size: 28px; color: #ffffff; z-index: 1; text-decoration: none; transition: transform 0.2s; }
+        .social-btn::before { content: ""; position: absolute; top: -3px; left: -3px; right: -3px; bottom: -3px; background: linear-gradient(135deg, #00ff88, #00bfff, #8a2be2, #ff007a, #ff8a00, #00ff88); background-size: 400% 400%; border-radius: 23px; z-index: -1; animation: border-run 3s linear infinite; }
+        @keyframes border-run { 0% { background-position: 0% 50%; } 50% { background-position: 100% 50%; } 100% { background-position: 0% 50%; } }
+        .dark-input { background: rgba(11, 12, 16, 0.5); border: 1px solid rgba(255, 255, 255, 0.2); color: white; transition: 0.3s; }
+        .dark-input:focus { border-color: #00bfff; outline: none; box-shadow: 0 0 15px rgba(0,191,255,0.4); background: rgba(11, 12, 16, 0.8); }
+        .uc-box { background: rgba(11, 12, 16, 0.5); border: 2px solid rgba(255,255,255,0.1); transition: all 0.3s; cursor: pointer; }
+        .uc-box.selected { border-color: #00ff88; box-shadow: 0 0 20px rgba(0, 255, 136, 0.5); transform: translateY(-5px) scale(1.05); background: rgba(0, 255, 136, 0.1); }
+        .card-container { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 12px; overflow: hidden; }
+        .card-text { font-family: monospace; font-size: 16px; letter-spacing: 1.5px; color: white; white-space: nowrap; overflow-x: auto; flex-grow: 1; }
+        .card-text::-webkit-scrollbar { display: none; }
+        #loader { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: #050507; z-index: 9999; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+        .spinner { width: 50px; height: 50px; border: 5px solid rgba(0, 242, 254, 0.3); border-top-color: #00f2fe; border-radius: 50%; animation: spin 1s linear infinite; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        
+        /* Rasmlar uchun maxsus stil */
+        .btn-img { width: 35px; height: 35px; object-fit: contain; }
+    </style>
+</head>
+<body class="px-4 w-full flex flex-col items-center">
+
+    <div id="loader">
+        <div class="spinner"></div>
+        <p class="mt-4 text-[#00f2fe] font-bold tracking-widest animate-pulse">BAZA YUKLANMOQDA...</p>
+    </div>
+
+    <div class="w-full max-w-md mx-auto relative z-10 hidden" id="app-container">
+        
+        <div class="profile-container" id="profile-header">
+            <img src="https://i.pinimg.com/736x/21/df/b5/21dfb552fae7ab3493821033b0067da2.jpg" alt="Profile" class="profile-img" id="user-profile-img">
+            <h1 class="profile-name">TEZKOR XIZMATLAR</h1>
+        </div>
+
+        <!-- ASOSIY MENYU -->
+        <div id="main-menu">
+            <!-- 1. PUBG UC TUGMASI -->
+            <div class="custom-btn play-sound" onclick="openForm('uc')">
+                <div class="btn-line line-top"></div>
+                <img src="https://www.pubgmobile.com/common/images/icon_uc.png" class="btn-img" alt="UC Icon">
+                UC SOTIB OLISH
+                <div class="btn-line line-bottom"></div>
+            </div>
+
+            <!-- 2. TELEGRAM PREMIUM TUGMASI -->
+            <div class="custom-btn play-sound" onclick="openForm('premium')" style="box-shadow: 0 8px 25px rgba(138,43,226,0.3);">
+                <div class="btn-line line-top" style="background: linear-gradient(90deg, #8a2be2, #ff007a, #8a2be2);"></div>
+                <img src="https://upload.wikimedia.org/wikipedia/commons/thumb/8/83/Telegram_2019_Logo.svg/512px-Telegram_2019_Logo.svg.png" class="btn-img" alt="Premium Icon">
+                TELEGRAM PREMIUM
+                <div class="btn-line line-bottom" style="background: linear-gradient(90deg, #8a2be2, #ff007a, #8a2be2);"></div>
+            </div>
+
+            <!-- 3. TELEGRAM STARS TUGMASI -->
+            <div class="custom-btn play-sound" onclick="openForm('stars')" style="box-shadow: 0 8px 25px rgba(255,165,0,0.3); margin-bottom: 10px;">
+                <div class="btn-line line-top" style="background: linear-gradient(90deg, #ff8a00, #ff007a, #ff8a00);"></div>
+                <img src="https://itdg.ir/wp-content/uploads/2024/06/Telegram-Stars.png" class="btn-img" alt="Stars Icon">
+                TELEGRAM STARS
+                <div class="btn-line line-bottom" style="background: linear-gradient(90deg, #ff8a00, #ff007a, #ff8a00);"></div>
+            </div>
+
+            <div class="social-container">
+                <a href="#" target="_blank" id="link-instagram" class="social-btn play-sound"><i class="fa-brands fa-instagram"></i></a>
+                <a href="#" target="_blank" id="link-youtube" class="social-btn play-sound"><i class="fa-brands fa-youtube"></i></a>
+                <a href="#" target="_blank" id="link-telegram" class="social-btn play-sound"><i class="fa-brands fa-telegram"></i></a>
+            </div>
+        </div>
+
+        <!-- SOTIB OLISH FORMASI (UNVERSAL) -->
+        <div id="purchase-form" class="hidden mt-2 w-full max-w-sm mx-auto">
+            
+            <h2 id="form-title" class="text-center text-[#00ff88] font-black text-xl mb-4 uppercase drop-shadow-md"></h2>
+
+            <div class="mb-5 glass-panel p-5">
+                <label id="input-label" class="block text-[#00bfff] text-sm font-bold mb-2 ml-1"></label>
+                <input type="text" id="user-input" class="w-full dark-input p-4 rounded-xl text-xl font-mono tracking-widest text-center">
+            </div>
+
+            <div class="mb-5 glass-panel p-5">
+                <label id="grid-label" class="block text-[#00bfff] text-sm font-bold mb-3 ml-1"></label>
+                <div class="grid grid-cols-2 gap-4" id="item-grid"></div>
+            </div>
+
+            <!-- TO'LOV BOSQICHI -->
+            <div id="payment-step" class="hidden mb-5 glass-panel p-6 shadow-2xl">
+                <p class="text-center text-gray-300 text-sm mb-1">To'lov summasi:</p>
+                <p class="text-center text-3xl font-black text-[#00ff88] mb-5 drop-shadow-lg"><span id="display-price">0</span> <span class="text-lg">UZS</span></p>
+                
+                <p class="text-[#00bfff] text-sm font-bold mb-2 ml-1"><i class="fa-regular fa-credit-card mr-1"></i> Shu kartaga to'lov qiling:</p>
+                <div class="dark-input rounded-xl mb-2 card-container">
+                    <span id="card-number" class="card-text">8600 1234 5678 9012</span>
+                    <button type="button" onclick="copyCard()" class="text-white bg-gradient-to-r from-[#00bfff] to-[#007acc] px-3 py-2 rounded-lg font-bold text-sm active:scale-95 transition shadow-lg shrink-0 play-sound"><i class="fa-regular fa-copy mr-1"></i> NUSXA</button>
+                </div>
+                <p id="copy-msg" class="text-[#00ff88] text-sm text-center hidden mb-4 font-bold">✅ Karta nusxalandi!</p>
+
+                <label class="block text-[#00bfff] text-sm font-bold mb-2 ml-1 mt-4"><i class="fa-solid fa-file-invoice mr-1"></i> TO'LOV CHEKINI YUKLANG</label>
+                <input type="file" id="receipt-file" accept="image/*" class="w-full text-sm text-gray-400 file:mr-4 file:py-3 file:px-4 file:rounded-xl file:border-0 file:text-sm file:font-bold file:bg-[#00bfff] file:text-white cursor-pointer dark-input rounded-xl p-1 play-sound">
+            </div>
+
+            <button type="button" id="submit-btn" onclick="submitOrder()" class="custom-btn mt-2 w-full max-w-full play-sound" style="margin-bottom: 0;">
+                <div class="btn-line line-top"></div>TASDIQLASH VA YUBORISH<div class="btn-line line-bottom"></div>
+            </button>
+            <button type="button" onclick="goBack()" class="w-full text-center text-gray-400 mt-6 text-sm hover:text-white transition font-bold play-sound">
+                <i class="fa-solid fa-arrow-left mr-1"></i> Orqaga qaytish
+            </button>
+        </div>
+
+        <!-- ADMIN LOGIN -->
+        <div id="admin-login" class="hidden w-full max-w-sm mx-auto mt-10">
+            <div class="glass-panel p-8 text-center">
+                <i class="fa-solid fa-user-shield text-5xl text-[#ff007a] mb-4"></i>
+                <h2 class="text-2xl font-black text-white mb-6">ADMIN PANEL</h2>
+                <input type="text" id="admin-user" placeholder="Login" class="w-full dark-input p-3 rounded-xl mb-4 text-center font-bold">
+                <input type="password" id="admin-pass" placeholder="Parol" class="w-full dark-input p-3 rounded-xl mb-6 text-center font-bold">
+                <button onclick="loginAdmin()" class="w-full bg-gradient-to-r from-[#ff007a] to-[#8a2be2] text-white p-3 rounded-xl font-bold shadow-lg hover:opacity-90 transition play-sound">KIRISH</button>
+                <button onclick="closeAdmin()" class="mt-4 text-gray-400 text-sm hover:text-white play-sound">Bekor qilish</button>
+            </div>
+        </div>
+
+        <!-- ADMIN SOZLAMALAR -->
+        <div id="admin-dashboard" class="hidden w-full max-w-md mx-auto mt-2 pb-10">
+            <div class="glass-panel p-4 mb-4 flex justify-between items-center">
+                <h2 class="text-lg font-black text-[#00ff88]"><i class="fa-solid fa-gear mr-1"></i> Sozlamalar</h2>
+                <button onclick="closeAdmin()" class="text-red-400 hover:text-red-500 font-bold text-sm play-sound"><i class="fa-solid fa-right-from-bracket"></i> Chiqish</button>
+            </div>
+
+            <div class="glass-panel p-5 mb-4">
+                <h3 class="text-sm font-bold text-[#00bfff] mb-3"><i class="fa-brands fa-telegram mr-1"></i> Telegram Bot Sozlamalari</h3>
+                <input type="text" id="set-bot-token" placeholder="Bot Token" class="w-full dark-input p-3 rounded-xl mb-3 text-sm">
+                <input type="text" id="set-admin-id" placeholder="Chat ID" class="w-full dark-input p-3 rounded-xl mb-3 text-sm">
+                <div class="flex gap-2">
+                    <button onclick="saveBotSettings()" class="w-1/2 bg-[#00ff88] text-black p-2 rounded-xl font-bold play-sound" id="btn-save-bot">SAQLASH</button>
+                    <button onclick="testBotConnection()" id="test-bot-btn" class="w-1/2 bg-[#00bfff] text-white p-2 rounded-xl font-bold play-sound">TEKSHIRISH</button>
+                </div>
+            </div>
+
+            <div class="glass-panel p-5 mb-4">
+                <h3 class="text-sm font-bold text-[#ff007a] mb-3"><i class="fa-solid fa-link mr-1"></i> Ijtimoiy Tarmoqlar</h3>
+                <input type="text" id="set-instagram" placeholder="Instagram URL" class="w-full dark-input p-3 rounded-xl mb-3 text-sm">
+                <input type="text" id="set-youtube" placeholder="YouTube URL" class="w-full dark-input p-3 rounded-xl mb-3 text-sm">
+                <input type="text" id="set-telegram" placeholder="Telegram URL" class="w-full dark-input p-3 rounded-xl mb-3 text-sm">
+                <button onclick="saveSocialLinks()" class="w-full bg-gradient-to-r from-[#ff007a] to-[#8a2be2] text-white p-2 rounded-xl font-bold play-sound" id="btn-save-social">LINKLARNI SAQLASH</button>
+            </div>
+
+            <div class="glass-panel p-5 mb-4">
+                <h3 class="text-sm font-bold text-[#00bfff] mb-3"><i class="fa-regular fa-credit-card mr-1"></i> Karta Raqami</h3>
+                <input type="text" id="set-card" oninput="formatInputCard(this)" placeholder="8600 1234 5678 9012" class="w-full dark-input p-3 rounded-xl mb-3 font-mono text-center tracking-widest text-lg">
+                <button onclick="saveCard()" class="w-full bg-[#00bfff] text-white p-2 rounded-xl font-bold play-sound" id="btn-save-card">SAQLASH</button>
+            </div>
+
+            <div class="glass-panel p-5 mb-4 border border-[#00bfff]">
+                <h3 class="text-sm font-bold text-[#00bfff] mb-3"><i class="fa-solid fa-plus mr-1"></i> Yangi UC Paket</h3>
+                <div class="flex gap-2 mb-3">
+                    <input type="number" id="new-uc-amount" placeholder="UC miqdori" class="w-1/2 dark-input p-3 rounded-xl text-sm">
+                    <input type="text" id="new-uc-price" placeholder="Narxi" class="w-1/2 dark-input p-3 rounded-xl text-sm">
+                </div>
+                <button onclick="addItem('uc')" class="w-full bg-[#00bfff] text-white p-2 rounded-xl font-bold mb-4 play-sound">QO'SHISH</button>
+                <div id="admin-uc-list" class="flex flex-col gap-2"></div>
+            </div>
+
+            <div class="glass-panel p-5 mb-4 border border-[#8a2be2]">
+                <h3 class="text-sm font-bold text-[#8a2be2] mb-3"><i class="fa-solid fa-plus mr-1"></i> Yangi Premium Muddat</h3>
+                <div class="flex gap-2 mb-3">
+                    <input type="text" id="new-prem-amount" placeholder="Muddat (Masalan: 3 Oylik)" class="w-1/2 dark-input p-3 rounded-xl text-sm">
+                    <input type="text" id="new-prem-price" placeholder="Narxi" class="w-1/2 dark-input p-3 rounded-xl text-sm">
+                </div>
+                <button onclick="addItem('premium')" class="w-full bg-[#8a2be2] text-white p-2 rounded-xl font-bold mb-4 play-sound">QO'SHISH</button>
+                <div id="admin-prem-list" class="flex flex-col gap-2"></div>
+            </div>
+
+            <div class="glass-panel p-5 border border-[#ff8a00]">
+                <h3 class="text-sm font-bold text-[#ff8a00] mb-3"><i class="fa-solid fa-plus mr-1"></i> Yangi Stars Paket</h3>
+                <div class="flex gap-2 mb-3">
+                    <input type="number" id="new-star-amount" placeholder="Stars miqdori" class="w-1/2 dark-input p-3 rounded-xl text-sm">
+                    <input type="text" id="new-star-price" placeholder="Narxi" class="w-1/2 dark-input p-3 rounded-xl text-sm">
+                </div>
+                <button onclick="addItem('stars')" class="w-full bg-[#ff8a00] text-white p-2 rounded-xl font-bold mb-4 play-sound">QO'SHISH</button>
+                <div id="admin-star-list" class="flex flex-col gap-2"></div>
+            </div>
+
+        </div>
+    </div>
+
+    <button onclick="openAdmin()" class="fixed bottom-2 right-2 text-xs text-gray-600 hover:text-gray-300 transition play-sound"><i class="fa-solid fa-lock"></i> Admin</button>
+
+<script>
+    const BIN_ID = "69c1ae3bb7ec241ddc976618"; 
+    const API_KEY = "$2a$10$VHoMm66q6eKmUSI7G1d3Iun11XU1eac.BVRVrPVvSG8.ZCYECPO6O"; 
+
+    let db = {
+        botToken: '', adminId: '', cardNumber: '8600 1234 5678 9012',
+        social: { instagram: '', youtube: '', telegram: '' },
+        ucPackages:[ { id: 1, amount: '60', price: '12 000' } ],
+        premiumPackages:[ { id: 1, amount: '1 Oylik', price: '35 000' } ],
+        starsPackages:[ { id: 1, amount: '50', price: '15 000' } ]
+    };
+
+    let currentCategory = 'uc'; 
+    let selectedOrder = { item: '', price: '' };
+
+    function playClickSound() {
+        try {
+            const AudioContext = window.AudioContext || window.webkitAudioContext;
+            if (!window.audioCtx) { window.audioCtx = new AudioContext(); }
+            if (window.audioCtx.state === 'suspended') { window.audioCtx.resume(); }
+            const osc = window.audioCtx.createOscillator();
+            const gain = window.audioCtx.createGain();
+            osc.type = 'sine';
+            osc.frequency.setValueAtTime(600, window.audioCtx.currentTime);
+            osc.frequency.exponentialRampToValueAtTime(100, window.audioCtx.currentTime + 0.05);
+            gain.gain.setValueAtTime(0.3, window.audioCtx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.01, window.audioCtx.currentTime + 0.05);
+            osc.connect(gain);
+            gain.connect(window.audioCtx.destination);
+            osc.start();
+            osc.stop(window.audioCtx.currentTime + 0.05);
+        } catch(e){ console.log("Ovoz tizimi ishlamadi:", e); }
+    }
+
+    document.addEventListener('click', (e) => { if(e.target.closest('.play-sound')) { playClickSound(); } });
+
+    async function fetchDatabase() {
+        try {
+            const response = await fetch(`https://api.jsonbin.io/v3/b/${BIN_ID}/latest`, { headers: { 'X-Master-Key': API_KEY } });
+            const data = await response.json();
+            if (data.record) {
+                db = data.record; 
+                if (!db.social) db.social = { instagram: '', youtube: '', telegram: '' };
+                if (!db.premiumPackages) db.premiumPackages =[];
+                if (!db.starsPackages) db.starsPackages =[];
+            }
+        } catch (error) { db = JSON.parse(localStorage.getItem('uc_db')) || db; }
+        initAppUI();
+    }
+
+    async function saveData(btnElement) {
+        let originalText = "";
+        if(btnElement) {
+            originalText = btnElement.innerText;
+            btnElement.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i>`;
+            btnElement.style.pointerEvents = "none";
+        }
+        try {
+            await fetch(`https://api.jsonbin.io/v3/b/${BIN_ID}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json', 'X-Master-Key': API_KEY },
+                body: JSON.stringify(db)
+            });
+            localStorage.setItem('uc_db', JSON.stringify(db)); 
+            updateUI();
+            if(btnElement) alert("✅ Muvaffaqiyatli saqlandi!");
+        } catch (error) { alert("❌ Saqlashda xatolik!"); }
+        if(btnElement) { btnElement.innerText = originalText; btnElement.style.pointerEvents = "auto"; }
+    }
+
+    function initAppUI() {
+        document.getElementById('loader').style.display = 'none';
+        document.getElementById('app-container').classList.remove('hidden');
+        updateUI();
+        try { const tg = window.Telegram.WebApp; tg.ready(); tg.expand(); const user = tg.initDataUnsafe?.user; if (user && user.photo_url) document.getElementById('user-profile-img').src = user.photo_url; } catch (e) {}
+    }
+
+    function updateUI() {
+        document.getElementById('card-number').innerText = formatCardNumber(db.cardNumber);
+        document.getElementById('link-instagram').href = db.social.instagram || '#';
+        document.getElementById('link-youtube').href = db.social.youtube || '#';
+        document.getElementById('link-telegram').href = db.social.telegram || '#';
+        renderAdminLists();
+    }
+
+    function formatCardNumber(value) {
+        let v = value.replace(/\s+/g, '').replace(/[^0-9]/gi, '');
+        let matches = v.match(/\d{4,16}/g);
+        let match = matches && matches[0] || ''; let parts =[];
+        for (let i = 0, len = match.length; i < len; i += 4) { parts.push(match.substring(i, i + 4)); }
+        return parts.length ? parts.join(' ') : value;
+    }
+    function formatInputCard(element) { element.value = formatCardNumber(element.value); }
+    
+    function openForm(category) {
+        currentCategory = category;
+        document.getElementById('main-menu').style.display = 'none';
+        document.getElementById('purchase-form').classList.remove('hidden');
+        document.getElementById('payment-step').classList.add('hidden');
+        selectedOrder = { item: '', price: '' };
+        document.getElementById('user-input').value = '';
+        document.getElementById('receipt-file').value = '';
+
+        const title = document.getElementById('form-title');
+        const inputLabel = document.getElementById('input-label');
+        const userInput = document.getElementById('user-input');
+        const gridLabel = document.getElementById('grid-label');
+
+        if(category === 'uc') {
+            title.innerText = "UC SOTIB OLISH"; title.style.color = "#00bfff";
+            inputLabel.innerHTML = `<i class="fa-solid fa-id-card mr-1"></i> PUBG ID RAQAM`;
+            userInput.placeholder = "5123456789"; userInput.type = "number";
+            gridLabel.innerHTML = `<i class="fa-solid fa-coins mr-1"></i> UC TANLANG`;
+        } else if(category === 'premium') {
+            title.innerText = "TELEGRAM PREMIUM"; title.style.color = "#8a2be2";
+            inputLabel.innerHTML = `<i class="fa-brands fa-telegram mr-1"></i> TELEGRAM USERNAME`;
+            userInput.placeholder = "@username"; userInput.type = "text";
+            gridLabel.innerHTML = `<i class="fa-solid fa-star mr-1"></i> MUDDATNI TANLANG`;
+        } else if(category === 'stars') {
+            title.innerText = "TELEGRAM STARS"; title.style.color = "#ff8a00";
+            inputLabel.innerHTML = `<i class="fa-brands fa-telegram mr-1"></i> TELEGRAM USERNAME`;
+            userInput.placeholder = "@username"; userInput.type = "text";
+            gridLabel.innerHTML = `<i class="fa-solid fa-star-half-stroke mr-1"></i> STARS MIQDORINI TANLANG`;
+        }
+        renderItemsGrid();
+    }
+
+    function renderItemsGrid() {
+        const grid = document.getElementById('item-grid'); grid.innerHTML = '';
+        let list =[]; let label = "";
+        if(currentCategory === 'uc') { list = db.ucPackages ||[]; label = "UC"; }
+        else if(currentCategory === 'premium') { list = db.premiumPackages ||[]; label = ""; }
+        else if(currentCategory === 'stars') { list = db.starsPackages ||[]; label = "★"; }
+        list.forEach(pkg => {
+            grid.innerHTML += `<div class="uc-box p-4 rounded-xl text-center play-sound" onclick="selectItem(this, '${pkg.amount}', '${pkg.price}')">
+                <div class="text-2xl font-black text-white">${pkg.amount} <span class="text-xs font-normal text-yellow-400">${label}</span></div>
+                <div class="text-sm text-gray-400 mt-1 font-bold">${pkg.price} so'm</div>
+            </div>`;
+        });
+    }
+
+    function selectItem(element, amount, price) {
+        document.querySelectorAll('.uc-box').forEach(box => box.classList.remove('selected'));
+        element.classList.add('selected'); selectedOrder.item = amount; selectedOrder.price = price;
+        document.getElementById('display-price').innerText = price;
+        document.getElementById('payment-step').classList.remove('hidden');
+        setTimeout(() => document.getElementById('payment-step').scrollIntoView({ behavior: 'smooth' }), 100);
+    }
+
+    function copyCard() {
+        let cardText = document.getElementById('card-number').innerText.replace(/\s+/g, '');
+        navigator.clipboard.writeText(cardText).then(() => {
+            let msg = document.getElementById('copy-msg'); msg.classList.remove('hidden');
+            setTimeout(() => msg.classList.add('hidden'), 2000);
+        });
+    }
+
+    async function submitOrder() {
+        const inputVal = document.getElementById('user-input').value.trim();
+        const fileInput = document.getElementById('receipt-file').files[0];
+        const btn = document.getElementById('submit-btn');
+        if(!inputVal || !selectedOrder.item || !fileInput) return alert("To'liq to'ldiring!");
+        btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> YUBORILMOQDA...`; btn.style.pointerEvents = 'none';
+        const now = new Date(); const timeString = now.toLocaleDateString('uz-UZ') + " " + now.toLocaleTimeString('uz-UZ');
+        const orderId = Math.floor(100000 + Math.random() * 900000); 
+        let caption = `🛒 <b>YANGI BUYURTMA! (#${orderId})</b>\n\n`;
+        if (currentCategory === 'uc') { caption += `🆔 <b>PUBG ID:</b> <code>${inputVal}</code>\n💎 <b>Xarid:</b> ${selectedOrder.item} UC\n`; } 
+        else if (currentCategory === 'premium') { caption += `👤 <b>Username:</b> ${inputVal}\n🌟 <b>Xarid:</b> Premium (${selectedOrder.item})\n`; } 
+        else { caption += `👤 <b>Username:</b> ${inputVal}\n⭐ <b>Xarid:</b> ${selectedOrder.item} Stars\n`; }
+        caption += `💰 <b>Summa:</b> ${selectedOrder.price} UZS\n⏰ <b>Vaqti:</b> ${timeString}`;
+        const formData = new FormData();
+        formData.append("chat_id", db.adminId); formData.append("photo", fileInput); formData.append("caption", caption); formData.append("parse_mode", "HTML");
+        try {
+            const res = await fetch(`https://api.telegram.org/bot${db.botToken}/sendPhoto`, { method: "POST", body: formData });
+            const result = await res.json();
+            if (result.ok) { alert("✅ Yuborildi!"); goBack(); } else { alert("❌ Xatolik!"); }
+        } catch (e) { alert("❌ Tarmoq xatosi!"); } 
+        finally { btn.innerHTML = `<div class="btn-line line-top"></div>TASDIQLASH VA YUBORISH<div class="btn-line line-bottom"></div>`; btn.style.pointerEvents = 'auto'; }
+    }
+
+    async function testBotConnection() {
+        const token = document.getElementById('set-bot-token').value.trim(); const chatId = document.getElementById('set-admin-id').value.trim();
+        if (!token || !chatId) return alert("Kritilmagan!");
+        try {
+            const res = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ chat_id: chatId, text: "✅ Test!" }) });
+            const result = await res.json();
+            if (result.ok) { alert("✅ OK!"); db.botToken = token; db.adminId = chatId; saveData(); } 
+        } catch (e) { alert("❌ Xato!"); }
+    }
+
+    function goBack() { document.getElementById('purchase-form').classList.add('hidden'); document.getElementById('main-menu').style.display = 'block'; }
+    function openAdmin() { document.getElementById('main-menu').style.display = 'none'; document.getElementById('profile-header').classList.add('hidden'); document.getElementById('admin-login').classList.remove('hidden'); }
+    function closeAdmin() { document.getElementById('admin-login').classList.add('hidden'); document.getElementById('admin-dashboard').classList.add('hidden'); document.getElementById('profile-header').classList.remove('hidden'); document.getElementById('main-menu').style.display = 'block'; }
+
+    function loginAdmin() {
+        const u = document.getElementById('admin-user').value; const p = document.getElementById('admin-pass').value;
+        if(u === 'Azizbek1' && p === 'Aziz') {
+            document.getElementById('admin-login').classList.add('hidden'); document.getElementById('admin-dashboard').classList.remove('hidden');
+            document.getElementById('set-bot-token').value = db.botToken; document.getElementById('set-admin-id').value = db.adminId; 
+            document.getElementById('set-instagram').value = db.social.instagram; document.getElementById('set-youtube').value = db.social.youtube; document.getElementById('set-telegram').value = db.social.telegram; 
+            document.getElementById('set-card').value = formatCardNumber(db.cardNumber);
+            renderAdminLists();
+        } else { alert("Xato!"); }
+    }
+
+    function saveBotSettings() { db.botToken = document.getElementById('set-bot-token').value.trim(); db.adminId = document.getElementById('set-admin-id').value.trim(); saveData(document.getElementById('btn-save-bot')); }
+    function saveSocialLinks() { db.social.instagram = document.getElementById('set-instagram').value.trim(); db.social.youtube = document.getElementById('set-youtube').value.trim(); db.social.telegram = document.getElementById('set-telegram').value.trim(); saveData(document.getElementById('btn-save-social')); }
+    function saveCard() { db.cardNumber = document.getElementById('set-card').value; saveData(document.getElementById('btn-save-card')); }
+
+    function renderAdminLists() {
+        const lists = { uc: document.getElementById('admin-uc-list'), prem: document.getElementById('admin-prem-list'), star: document.getElementById('admin-star-list') };
+        Object.values(lists).forEach(l => l.innerHTML = '');
+        (db.ucPackages ||[]).forEach(pkg => lists.uc.innerHTML += `<div class="flex justify-between bg-black/50 p-2 rounded mb-1"><span>${pkg.amount} - ${pkg.price}</span><button onclick="removeItem('uc', ${pkg.id})" class="text-red-500">X</button></div>`);
+        (db.premiumPackages ||[]).forEach(pkg => lists.prem.innerHTML += `<div class="flex justify-between bg-black/50 p-2 rounded mb-1"><span>${pkg.amount} - ${pkg.price}</span><button onclick="removeItem('premium', ${pkg.id})" class="text-red-500">X</button></div>`);
+        (db.starsPackages ||[]).forEach(pkg => lists.star.innerHTML += `<div class="flex justify-between bg-black/50 p-2 rounded mb-1"><span>${pkg.amount} - ${pkg.price}</span><button onclick="removeItem('stars', ${pkg.id})" class="text-red-500">X</button></div>`);
+    }
+
+    function addItem(type) {
+        let amt, prc, arr;
+        if(type==='uc'){amt='new-uc-amount';prc='new-uc-price';arr='ucPackages';}
+        else if(type==='premium'){amt='new-prem-amount';prc='new-prem-price';arr='premiumPackages';}
+        else{amt='new-star-amount';prc='new-star-price';arr='starsPackages';}
+        const a = document.getElementById(amt).value, p = document.getElementById(prc).value;
+        if(!a || !p) return;
+        db[arr].push({ id: Date.now(), amount: a, price: p });
+        saveData();
+    }
+
+    function removeItem(type, id) {
+        let arr = type==='uc'?'ucPackages':type==='premium'?'premiumPackages':'starsPackages';
+        db[arr] = db[arr].filter(p => p.id !== id);
+        saveData();
+    }
+
+    fetchDatabase();
+</script>
+</body>
+</html>
