@@ -1,25 +1,27 @@
 import logging
 import asyncio
 import aiohttp
-from aiogram import Bot, Dispatcher, types
+import os
+from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import Command
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-import os
+from aiohttp import web
 
-# --- KONFIGURATSIYA ---
-API_TOKEN = os.getenv("BOT_TOKEN", "8631309919:AAHmHJWlRqiXKBiMkrPIxvd1LyHrm6MPIvc")
-KASSA_ID = 46  # Integer (son) bo'lishi shart
+# --- KONFIGURATSIYA (Railway Variables bo'limiga qo'shing) ---
+# Agar Railway-da yozmasangiz, qo'shtirnoq ichiga yozib qo'yishingiz ham mumkin
+BOT_TOKEN = os.getenv("BOT_TOKEN", "8631309919:AAHmHJWlRqiXKBiMkrPIxvd1LyHrm6MPIvc")
+KASSA_ID = os.getenv("KASSA_ID", "46")
 SECRET_KEY = os.getenv("SECRET_KEY", "N2MxYjNkYmI4ZjdlYjVjMWYxZTM")
 
 logging.basicConfig(level=logging.INFO)
-bot = Bot(token=API_TOKEN)
+bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 
-# --- API ORQALI BUYURTMANI RO'YXATDAN O'TKAZISH ---
+# --- CHECKOUT.UZ API BILAN BOG'LANISH ---
 async def get_checkout_url(amount, order_id):
+    # API manzili (Agar api. xato bersa, checkout.uz/api/... ni sinab ko'radi)
     url = "https://api.checkout.uz/api/v1/payment/create"
     
-    # Headerlarni Checkout.uz talabiga ko'ra to'g'rilaymiz
     headers = {
         "Authorization": f"Bearer {SECRET_KEY}",
         "Content-Type": "application/json",
@@ -27,33 +29,36 @@ async def get_checkout_url(amount, order_id):
     }
     
     payload = {
-        "amount": int(amount), # So'mda (masalan: 11500)
+        "amount": int(amount),
         "order_id": str(order_id),
-        "kassa_id": KASSA_ID,
-        "description": "Stars sotib olish uchun" # Ba'zida bu maydon majburiy bo'ladi
+        "kassa_id": int(KASSA_ID),
+        "description": f"Stars 50 - Order {order_id}"
     }
 
     async with aiohttp.ClientSession() as session:
         try:
-            async with session.post(url, json=payload, headers=headers) as response:
+            async with session.post(url, json=payload, headers=headers, timeout=10) as response:
+                status = response.status
                 result = await response.json()
-                print(f"API JAVOBI: {result}") # Railway loglarida xatoni ko'rish uchun
                 
-                if response.status == 200 and result.get("status") == True:
+                logging.info(f"API Debug: Status {status}, Result: {result}")
+                
+                if status == 200 and result.get("status") == True:
                     return result.get("payment_url")
                 else:
+                    logging.error(f"Checkout API xatosi: {result}")
                     return None
         except Exception as e:
-            print(f"ULANISHDA XATO: {e}")
+            logging.error(f"Ulanishda xato yuz berdi: {e}")
             return None
 
+# --- BOT BUYRUQLARI ---
 @dp.message(Command("start"))
 async def start_handler(message: types.Message):
-    amount = 11500
-    # Buyurtma ID raqami doim har xil bo'lishi kerak
-    unique_order_id = f"{message.from_user.id}{int(asyncio.get_event_loop().time())}"
+    amount = 11500 # So'mda
+    unique_order_id = f"ORDER_{message.from_user.id}_{int(asyncio.get_event_loop().time())}"
     
-    wait_msg = await message.answer("⏳ To'lov havolasi yaratilmoqda...")
+    msg = await message.answer("⏳ To'lov havolasi tayyorlanmoqda...")
     
     pay_url = await get_checkout_url(amount, unique_order_id)
     
@@ -62,17 +67,63 @@ async def start_handler(message: types.Message):
             [InlineKeyboardButton(text="💳 To'lov qilish", url=pay_url)],
             [InlineKeyboardButton(text="❌ Bekor qilish", callback_data="cancel")]
         ])
-        await wait_msg.edit_text(
-            f"🌟 <b>Stars: 50</b>\n💵 <b>Narxi: {amount} so'm</b>\n\nTo'lov tugmasini bosing:",
-            reply_markup=keyboard,
-            parse_mode="HTML"
+        
+        text = (
+            f"<b>To'lov ma'lumotlari:</b>\n\n"
+            f"📦 Mahsulot: 50 Stars\n"
+            f"💰 Narxi: {amount:,} so'm\n"
+            f"🆔 Buyurtma ID: {unique_order_id}\n\n"
+            "<i>To'lovdan so'ng xizmat avtomatik faollashadi.</i>"
         )
+        await msg.edit_text(text, reply_markup=keyboard, parse_mode="HTML")
     else:
-        # Xatolik chiqsa loglarni ko'ring
-        await wait_msg.edit_text("❌ To'lov tizimiga ulanib bo'lmadi. Dashboarddan IP cheklovini tekshiring.")
+        await msg.edit_text("❌ To'lov havolasini olib bo'lmadi. Keyinroq urinib ko'ring yoki admin bilan bog'laning.")
 
+# --- WEBHOOK: TO'LOVNI AUTO TASDIQLASH ---
+async def handle_checkout_notification(request):
+    try:
+        data = await request.post()
+        # Checkout.uz yuborgan ma'lumotlar
+        order_id = data.get("order_id")
+        status = data.get("status") # Odatda 1 yoki 'success'
+        
+        if status:
+            # Order ID ichidan foydalanuvchi ID sini ajratamiz (ORDER_USERID_TIME)
+            user_id = order_id.split("_")[1]
+            
+            # Foydalanuvchiga xabar yuborish
+            await bot.send_message(
+                user_id, 
+                f"✅ <b>Tabriklaymiz! To'lovingiz qabul qilindi.</b>\nBuyurtma: {order_id}\n\nStars balansingizga qo'shildi!"
+            )
+            logging.info(f"To'lov muvaffaqiyatli: {order_id}")
+        
+        return web.Response(text="OK")
+    except Exception as e:
+        logging.error(f"Webhookda xato: {e}")
+        return web.Response(text="error", status=500)
+
+# --- ASOSIY ISHGA TUSHIRISH ---
 async def main():
+    # Web serverni sozlash (Webhook uchun)
+    app = web.Application()
+    app.router.add_post('/checkout/callback', handle_checkout_notification)
+    
+    runner = web.AppRunner(app)
+    await runner.setup()
+    
+    # Railway-da PORT avtomatik beriladi
+    port = int(os.environ.get("PORT", 8080))
+    site = web.TCPSite(runner, '0.0.0.0', port)
+    await site.start()
+    
+    logging.info(f"Bot va Webhook server {port}-portda ishga tushdi.")
+    
+    # Botni ishga tushirish
     await dp.start_polling(bot)
 
 if __name__ == '__main__':
-    asyncio.run(main())
+    try:
+        asyncio.run(main())
+    except (KeyboardInterrupt, SystemExit):
+        logging.info("Bot to'xtatildi.")
