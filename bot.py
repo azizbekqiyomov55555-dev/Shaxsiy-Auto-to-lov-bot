@@ -8,10 +8,9 @@ from flask import Flask, request
 
 API_TOKEN = "8631309919:AAHmHJWlRqiXKBiMkrPIxvd1LyHrm6MPIvc"
 
-# 🔥 SENIKI
 MERCHANT_ID = "MTdiZDIzOTRkYjAzN2UyM2U0ZmE"
 KASSA_ID = 46
-SECRET_KEY = "MTdiZDIzOTRkYjAzN2UyM2U0ZmE"
+SECRET_KEY = "N2MxYjNkYmI4ZjdlYjVjMWYxZTM"
 
 bot = Bot(token=API_TOKEN)
 dp = Dispatcher(bot)
@@ -60,17 +59,17 @@ async def pay(msg: types.Message):
         response = requests.post(url, json=data, headers=headers)
         res = response.json()
 
-        print(res)
+        print("API JAVOB:", res)
 
         pay_url = res.get("data", {}).get("pay_url")
 
         if pay_url:
             await msg.answer(f"💳 To‘lov qilish:\n{pay_url}")
         else:
-            await msg.answer("❌ To‘lov link kelmadi")
+            await msg.answer(f"❌ Link kelmadi:\n{res}")
 
     except Exception as e:
-        print(e)
+        print("XATOLIK:", e)
         await msg.answer("❌ Xatolik yuz berdi")
 
 # 🔔 WEBHOOK
