@@ -1,35 +1,32 @@
 import logging
 import hashlib
-import json
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import Command
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from aiohttp import web
+import asyncio
 
 # --- KONFIGURATSIYA ---
 API_TOKEN = '8631309919:AAHmHJWlRqiXKBiMkrPIxvd1LyHrm6MPIvc'
 KASSA_ID = "46"
 SECRET_KEY = "N2MxYjNkYmI4ZjdlYjVjMWYxZTM"
 
-# Bot va Dispatcher
+# Logging sozlamalari
 logging.basicConfig(level=logging.INFO)
 bot = Bot(token=API_TOKEN)
 dp = Dispatcher()
 
 # --- TO'LOV LINKINI YARATISH ---
 def create_payment_url(amount, order_id):
-    # Checkout.uz uchun to'lov linki formati
-    # Odatda: https://checkout.uz/pay/{kassa_id}/{amount}/{order_id}
-    # Eslatma: Tizimingizga qarab format farq qilishi mumkin. 
-    # Quyida eng keng tarqalgan usul:
+    # Checkout.uz standart formati
     return f"https://checkout.uz/pay/{KASSA_ID}/{amount}/{order_id}"
 
 # --- BOT BUYRUQLARI ---
 @dp.message(Command("start"))
 async def start_handler(message: types.Message):
-    # Namuna sifatida 50 yulduz (11500 so'm)
     amount = 11500
-    order_id = f"order_{message.from_user.id}_{message.message_id}" # Noyob ID
+    # Noyob buyurtma ID yaratish (user_id va xabar vaqti orqali)
+    order_id = f"{message.from_user.id}x{message.message_id}"
     
     pay_url = create_payment_url(amount, order_id)
     
@@ -38,53 +35,69 @@ async def start_handler(message: types.Message):
         [InlineKeyboardButton(text="❌ Bekor qilish", callback_data="cancel")]
     ])
     
+    # Username'dagi '_' belgisi xato bermasligi uchun HTML ishlatamiz
+    user_tag = f"@{message.from_user.username}" if message.from_user.username else "Noma'lum"
+    
     text = (
-        f"🌟 **Stars: 50**\n"
-        f"💵 **Narxi: {amount} so'm**\n"
-        f"👤 **Username: @{message.from_user.username}**\n\n"
-        "To'lov qilish tugmasini bosing. To'lovdan so'ng hisobingizga avtomatik tushadi."
+        f"🌟 <b>Stars: 50</b>\n"
+        f"💵 <b>Narxi: {amount} so'm</b>\n"
+        f"👤 <b>Username: {user_tag}</b>\n\n"
+        "To'lov qilish tugmasini bosing va to'lovni amalga oshiring. "
+        "1 daqiqa ichida hisobingizga yuboriladi."
     )
-    await message.answer(text, reply_markup=keyboard, parse_mode="Markdown")
+    
+    # parse_mode="HTML" - bu juda muhim!
+    await message.answer(text, reply_markup=keyboard, parse_mode="HTML")
 
-# --- WEBHOOK (TO'LOVNI TEKSHIRISH) ---
-# Bu qism Checkout.uz'dan keladigan xabarni qabul qiladi
+# --- WEBHOOK (TO'LOVNI QABUL QILISH) ---
 async def handle_webhook(request):
-    data = await request.post() # Checkout.uz ma'lumotlarni POST orqali yuboradi
-    
-    # Checkout yuboradigan ma'lumotlar (namuna)
-    order_id = data.get('order_id')
-    status = data.get('status') # 'success' yoki 'paid'
-    amount = data.get('amount')
-    sign = data.get('sign') # Xavfsizlik uchun imzo (hash)
-    
-    # Imzoni tekshirish (Fake to'lovlardan himoya)
-    # logic: md5(kassa_id + amount + order_id + secret_key)
-    check_str = f"{KASSA_ID}{amount}{order_id}{SECRET_KEY}"
-    my_sign = hashlib.md5(check_str.encode()).hexdigest()
-    
-    if my_sign == sign and status == 'success':
-        # To'lov muvaffaqiyatli!
-        # Foydalanuvchi ID sini order_id dan ajratib olamiz
-        user_id = int(order_id.split('_')[1])
+    try:
+        data = await request.post()
         
-        await bot.send_message(user_id, "✅ To'lov muvaffaqiyatli! 50 yulduz hisobingizga qo'shildi.")
-        return web.Response(text="OK")
-    
-    return web.Response(text="Error", status=400)
+        order_id = data.get('order_id')
+        status = data.get('status')
+        amount = data.get('amount')
+        sign = data.get('sign')
+        
+        # Checkout.uz imzosini tekshirish (Xavfsizlik)
+        check_str = f"{KASSA_ID}{amount}{order_id}{SECRET_KEY}"
+        my_sign = hashlib.md5(check_str.encode()).hexdigest()
+        
+        if my_sign == sign and status == 'success':
+            # order_id dan foydalanuvchi ID sini ajratib olamiz (biz order_id ni 'IDxVaqt' deb ochgandik)
+            user_id = int(order_id.split('x')[0])
+            
+            await bot.send_message(
+                user_id, 
+                "✅ <b>To'lov muvaffaqiyatli!</b>\n50 yulduz hisobingizga qo'shildi.",
+                parse_mode="HTML"
+            )
+            return web.Response(text="OK")
+        
+        return web.Response(text="Invalid data", status=400)
+    except Exception as e:
+        logging.error(f"Webhook xatosi: {e}")
+        return web.Response(text="Error", status=500)
 
-# --- WEB SERVERNİ ISHGA TUSHIRISH ---
-async def on_startup(dispatcher):
+# --- BOT VA WEB SERVERNİ BIRGA ISHLATISH ---
+async def main():
+    # Web serverni sozlash
     app = web.Application()
     app.router.add_post('/webhook/checkout', handle_webhook)
+    
     runner = web.AppRunner(app)
     await runner.setup()
-    site = web.TCPSite(runner, '0.0.0.0', 8080) # Port 8080
+    # Railway porti uchun:
+    site = web.TCPSite(runner, '0.0.0.0', 8080)
     await site.start()
-    print("Webhook server 8080-portda ishlamoqda...")
+    
+    logging.info("Webhook server 8080-portda ishlamoqda...")
+    
+    # Botni polling rejimida ishga tushirish
+    await dp.start_polling(bot)
 
-# Botni yurgizish
 if __name__ == '__main__':
-    import asyncio
-    loop = asyncio.get_event_loop()
-    loop.create_task(on_startup(dp))
-    dp.run_polling(bot)
+    try:
+        asyncio.run(main())
+    except (KeyboardInterrupt, SystemExit):
+        logging.info("Bot to'xtatildi!")
