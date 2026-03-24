@@ -1,4 +1,3 @@
-import logging
 import requests
 import asyncio
 from aiogram import Bot, Dispatcher, types
@@ -6,11 +5,11 @@ from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
 from aiogram.utils import executor
 from flask import Flask, request
 
+# 🔑 TOKEN
 API_TOKEN = "8631309919:AAHmHJWlRqiXKBiMkrPIxvd1LyHrm6MPIvc"
 
+# 🔥 CHECKOUT
 MERCHANT_ID = "MTdiZDIzOTRkYjAzN2UyM2U0ZmE"
-KASSA_ID = 46
-SECRET_KEY = "N2MxYjNkYmI4ZjdlYjVjMWYxZTM"
 
 bot = Bot(token=API_TOKEN)
 dp = Dispatcher(bot)
@@ -33,35 +32,28 @@ async def start(msg: types.Message):
 async def balans(msg: types.Message):
     await msg.answer("Balansingiz: 0 so‘m", reply_markup=balans_menu)
 
-# 💳 TO‘LOV
+# 💳 TO‘LOV LINK
 @dp.message_handler(lambda msg: msg.text == "➕ Hisobni to‘ldirish")
 async def pay(msg: types.Message):
     amount = 1000
 
-    url = "https://checkout.uz/api/payment"
-
-    headers = {
-        "Content-Type": "application/json",
-        "X-Auth": SECRET_KEY
-    }
+    url = "https://checkout.uz/api/create-invoice"
 
     data = {
         "merchant_id": MERCHANT_ID,
-        "cashbox_id": KASSA_ID,
         "amount": amount,
-        "description": "Balans to‘ldirish",
         "account": {
             "user_id": msg.from_user.id
         }
     }
 
     try:
-        response = requests.post(url, json=data, headers=headers)
+        response = requests.post(url, json=data)
+        print("RAW:", response.text)
+
         res = response.json()
 
-        print("API JAVOB:", res)
-
-        pay_url = res.get("data", {}).get("pay_url")
+        pay_url = res.get("pay_url")
 
         if pay_url:
             await msg.answer(f"💳 To‘lov qilish:\n{pay_url}")
