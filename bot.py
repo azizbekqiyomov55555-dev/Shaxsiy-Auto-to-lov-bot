@@ -4,8 +4,6 @@ import aiohttp
 import sqlite3
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import Command
-from aiogram.fsm.context import FSMContext
-from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
 # --- KONFIGURATSIYA ---
@@ -16,60 +14,48 @@ logging.basicConfig(level=logging.INFO)
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 
-# --- MA'LUMOTLAR BAZASI (SQLite) ---
+# --- BAZA BILAN ISHLASH ---
 def init_db():
-    conn = sqlite3.connect("users.db")
+    conn = sqlite3.connect("bot_users.db")
     cursor = conn.cursor()
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS users (
-            user_id INTEGER PRIMARY KEY,
-            balance INTEGER DEFAULT 0
-        )
-    """)
+    cursor.execute("CREATE TABLE IF NOT EXISTS users (user_id INTEGER PRIMARY KEY, balance INTEGER DEFAULT 0)")
     conn.commit()
     conn.close()
 
 def get_balance(user_id):
-    conn = sqlite3.connect("users.db")
+    conn = sqlite3.connect("bot_users.db")
     cursor = conn.cursor()
     cursor.execute("SELECT balance FROM users WHERE user_id = ?", (user_id,))
     res = cursor.fetchone()
     conn.close()
-    if res: return res[0]
-    return 0
+    return res[0] if res else 0
 
 def add_balance(user_id, amount):
-    conn = sqlite3.connect("users.db")
+    conn = sqlite3.connect("bot_users.db")
     cursor = conn.cursor()
     cursor.execute("INSERT OR IGNORE INTO users (user_id, balance) VALUES (?, 0)", (user_id,))
     cursor.execute("UPDATE users SET balance = balance + ? WHERE user_id = ?", (amount, user_id))
     conn.commit()
     conn.close()
 
-# Holatlar
-class PaymentStates(StatesGroup):
-    waiting_for_amount = State()
-
 # --- API FUNKSIYALARI ---
 
-# 1. To'lov yaratish
-async def create_payment(amount, description):
+async def create_payment(amount, user_id):
     url = "https://checkout.uz/api/v1/create_payment"
     headers = {"Authorization": f"Bearer {API_KEY}", "Content-Type": "application/json"}
-    payload = {"amount": int(amount), "description": description}
+    payload = {"amount": int(amount), "description": f"ID: {user_id} balansini to'ldirish"}
 
     async with aiohttp.ClientSession() as session:
         try:
             async with session.post(url, json=payload, headers=headers) as response:
                 result = await response.json()
-                if response.status == 200 and result.get("status") == "success":
-                    return result.get("payment") # Obyektni qaytaramiz (id va url bor)
+                if result.get("status") == "success":
+                    return result.get("payment")
                 return None
         except Exception as e:
-            logging.error(f"API ERROR: {e}")
+            logging.error(f"Xato: {e}")
             return None
 
-# 2. To'lov holatini tekshirish
 async def check_payment_status(payment_id):
     url = "https://checkout.uz/api/v1/status_payment"
     headers = {"Authorization": f"Bearer {API_KEY}", "Content-Type": "application/json"}
@@ -79,12 +65,16 @@ async def check_payment_status(payment_id):
         try:
             async with session.post(url, json=payload, headers=headers) as response:
                 result = await response.json()
-                # JSON hujjatiga ko'ra "paid" statusini qidiramiz
-                if result.get("status") == "success" and result.get("data", {}).get("status") == "paid":
-                    return True, result.get("data", {}).get("amount")
+                logging.info(f"Tekshirish javobi: {result}")
+                
+                # API 'paid' statusini qaytarsa
+                if result.get("status") == "success":
+                    data = result.get("data", {})
+                    if data.get("status") == "paid":
+                        return True, data.get("amount")
                 return False, 0
         except Exception as e:
-            logging.error(f"CHECK ERROR: {e}")
+            logging.error(f"Tekshirishda xato: {e}")
             return False, 0
 
 # --- HANDLERLAR ---
@@ -93,22 +83,25 @@ async def check_payment_status(payment_id):
 async def cmd_start(message: types.Message):
     balance = get_balance(message.from_user.id)
     await message.answer(
-        f"👤 Hisobingiz: {balance:,} so'm\n\n"
-        f"Pul qo'shish uchun summani yozing (kamida 100 so'm):",
+        f"👋 Salom {message.from_user.full_name}!\n\n"
+        f"💰 Balansingiz: {balance:,} so'm\n\n"
+        f"Hisobni to'ldirish uchun summani kiriting (masalan: 1000):"
     )
-    # Bizga state kerak emas, oddiy raqam yozsa ham tutamiz
-    # Lekin tartib uchun state ishlatamiz:
-    # await state.set_state(PaymentStates.waiting_for_amount)
+
+@dp.message(Command("balance"))
+async def cmd_balance(message: types.Message):
+    balance = get_balance(message.from_user.id)
+    await message.answer(f"💳 Joriy balansingiz: {balance:,} so'm")
 
 @dp.message(F.text.isdigit())
 async def process_amount(message: types.Message):
     amount = int(message.text)
     if amount < 100:
-        await message.answer("Minimal miqdor 100 so'm!")
+        await message.answer("❌ Minimal summa 100 so'm!")
         return
 
-    msg = await message.answer("⏳ Havola tayyorlanmoqda...")
-    payment = await create_payment(amount, f"User {message.from_user.id} balance top-up")
+    msg = await message.answer("⏳ To'lov havolasi yaratilmoqda...")
+    payment = await create_payment(amount, message.from_user.id)
 
     if payment:
         p_id = payment.get("_id")
@@ -116,16 +109,16 @@ async def process_amount(message: types.Message):
         
         keyboard = InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="💳 To'lov qilish", url=p_url)],
-            [InlineKeyboardButton(text="🔄 Tekshirish", callback_data=f"check_{p_id}")]
+            [InlineKeyboardButton(text="🔄 To'lovni tekshirish", callback_data=f"check_{p_id}")]
         ])
         
         await msg.edit_text(
-            f"💰 To'lov miqdori: {amount:,} so'm\n\n"
-            f"To'lovni amalga oshirgach 'Tekshirish' tugmasini bosing.",
+            f"💵 Miqdor: {amount:,} so'm\n\n"
+            f"To'lovni amalga oshirgach, pastdagi tugmani bosing 👇",
             reply_markup=keyboard
         )
     else:
-        await msg.edit_text("❌ To'lov yaratib bo'lmadi. API xatosi.")
+        await msg.edit_text("❌ To'lov yaratishda xatolik yuz berdi.")
 
 @dp.callback_query(F.data.startswith("check_"))
 async def check_callback(callback: types.CallbackQuery):
@@ -138,21 +131,17 @@ async def check_callback(callback: types.CallbackQuery):
         new_balance = get_balance(callback.from_user.id)
         
         await callback.message.edit_text(
-            f"✅ To'lov muvaffaqiyatli qabul qilindi!\n\n"
+            f"✅ Tabriklaymiz! To'lov qabul qilindi.\n\n"
             f"➕ Hisobingizga {amount:,} so'm qo'shildi.\n"
-            f"💳 Jami balans: {new_balance:,} so'm"
+            f"💰 Yangi balans: {new_balance:,} so'm"
         )
-        await callback.answer("Muvaffaqiyatli!")
     else:
-        await callback.answer("❌ To'lov hali amalga oshirilmagan yoki xatolik.", show_alert=True)
+        await callback.answer("❌ To'lov hali topilmadi. To'lagan bo'lsangiz biroz kutib qayta urunib ko'ring.", show_alert=True)
 
 async def main():
-    init_db() # Bazani yaratish
+    init_db()
     await bot.delete_webhook(drop_pending_updates=True)
     await dp.start_polling(bot)
 
 if __name__ == '__main__':
-    try:
-        asyncio.run(main())
-    except KeyboardInterrupt:
-        pass
+    asyncio.run(main())
