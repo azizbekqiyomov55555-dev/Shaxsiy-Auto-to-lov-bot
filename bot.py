@@ -20,7 +20,7 @@ import hashlib
 import hmac
 
 # ================== SOZLAMALAR ==================
-BOT_TOKEN = "YANGI_TOKEN_8631309919:AAHmHJWlRqiXKBiMkrPIxvd1LyHrm6MPIvc"
+BOT_TOKEN = "8766647589:AAHmY6x59GgKA25K3e737-7jomufi9wRv2Y"
 ADMIN_ID = 8332077004
 MAIN_CHANNEL_ID = "@Azizbekl2026"
 
