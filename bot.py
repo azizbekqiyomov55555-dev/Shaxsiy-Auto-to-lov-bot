@@ -16,7 +16,6 @@ from aiogram.types import (
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.filters import CommandStart, Command
-from aiohttp import web
 
 # ================== SOZLAMALAR ==================
 BOT_TOKEN = "8766647589:AAHmY6x59GgKA25K3e737-7jomufi9wRv2Y"
@@ -24,10 +23,8 @@ ADMIN_ID = 8332077004
 MAIN_CHANNEL_ID = "@Azizbekl2026"
 
 # ================== CHECKOUT.UZ SOZLAMALARI ==================
-CHECKOUT_KASSA_ID = 46
-CHECKOUT_SECRET_KEY = "N2MxYjNkYmI4ZjdlYjVjMWYxZTM"
-CHECKOUT_BASE_URL = "https://checkout.uz/api"
-WEBHOOK_BASE_URL = "https://shaxsiy-auto-to-lov-bot-production.up.railway.app"
+CHECKOUT_API_KEY = "N2MxYjNkYmI4ZjdlYjVjMWYxZTM"
+CHECKOUT_API_URL = "https://checkout.uz/api/v1"
 
 # ================== JSONBIN.IO SOZLAMALARI ==================
 JSONBIN_API_KEY = "$2a$10$HEa6qY6FgdbvtwnxhGkIE.59M05ctGsBYJn7zuLyvhrrqsWH5peje"
@@ -92,48 +89,256 @@ def get_next_id(data: dict) -> int:
 
 # ================== CHECKOUT.UZ FUNKSIYALAR ==================
 
-def generate_checkout_signature(params: dict, secret: str) -> str:
-    """Checkout.uz uchun HMAC-SHA256 imzo"""
-    sorted_params = "&".join(f"{k}={v}" for k, v in sorted(params.items()))
-    signature = hmac.new(
-        secret.encode('utf-8'),
-        sorted_params.encode('utf-8'),
-        hashlib.sha256
-    ).hexdigest()
-    return signature
-
-async def create_checkout_payment(order_id: int, amount: int, description: str, user_id: int) -> dict:
-    """Checkout.uz da to'lov yaratish"""
-    params = {
-        "kassa_id": CHECKOUT_KASSA_ID,
-        "amount": amount,
-        "currency": "UZS",
-        "description": description,
-        "order_id": str(order_id),
-        "return_url": f"{WEBHOOK_BASE_URL}/payment_return/{user_id}",
-        "callback_url": f"{WEBHOOK_BASE_URL}/webhook/checkout",
-        "user_id": str(user_id),
+async def create_checkout_payment(amount: int, description: str) -> dict:
+    """Checkout.uz da to'lov yaratish — create_payment"""
+    headers = {
+        "Authorization": f"Bearer {CHECKOUT_API_KEY}",
+        "Content-Type": "application/json"
     }
-    params["sign"] = generate_checkout_signature(params, CHECKOUT_SECRET_KEY)
-
-    url = f"{CHECKOUT_BASE_URL}/payment/create"
-    headers = {"Content-Type": "application/json", "Accept": "application/json"}
+    payload = {
+        "amount": amount,
+        "description": description
+    }
     try:
         async with aiohttp.ClientSession() as session:
-            async with session.post(url, json=params, headers=headers, timeout=aiohttp.ClientTimeout(total=15)) as resp:
+            async with session.post(
+                f"{CHECKOUT_API_URL}/create_payment",
+                json=payload, headers=headers,
+                timeout=aiohttp.ClientTimeout(total=15)
+            ) as resp:
                 result = await resp.json()
-                logging.info(f"Checkout.uz response: {result}")
+                logging.info(f"Checkout.uz create: {result}")
                 return result
     except Exception as e:
-        logging.error(f"Checkout.uz xato: {e}")
-        return {"error": str(e), "success": False}
+        logging.error(f"Checkout.uz create xato: {e}")
+        return {"status": "error", "error": str(e)}
 
-def verify_checkout_webhook(data: dict, secret: str) -> bool:
-    """Checkout.uz webhook imzosini tekshirish"""
-    received_sign = data.get("sign", "")
-    params_to_check = {k: v for k, v in data.items() if k != "sign"}
-    expected_sign = generate_checkout_signature(params_to_check, secret)
-    return received_sign == expected_sign
+async def check_payment_status(payment_id: int) -> dict:
+    """Checkout.uz dan to'lov statusini tekshirish — status_payment"""
+    headers = {
+        "Authorization": f"Bearer {CHECKOUT_API_KEY}",
+        "Content-Type": "application/json"
+    }
+    payload = {"id": int(payment_id)}
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                f"{CHECKOUT_API_URL}/status_payment",
+                json=payload, headers=headers,
+                timeout=aiohttp.ClientTimeout(total=15)
+            ) as resp:
+                result = await resp.json()
+                return result
+    except Exception as e:
+        logging.error(f"Checkout.uz status xato: {e}")
+        return {"status": "error"}
+
+# ================== TO'LOV MONITOR (HAR 10 SONIYADA) ==================
+
+async def payment_monitor():
+    """Orqa fonda ishlaydi — har 10 soniyada kutilayotgan to'lovlarni tekshiradi"""
+    logging.info("🚀 To'lov monitori ishga tushdi...")
+    await asyncio.sleep(5)  # Bot to'liq ishga tushguncha kutamiz
+
+    while True:
+        try:
+            await asyncio.sleep(10)
+            data = await jb_read()
+            pending = data.get("pending_payments", [])
+
+            # Faqat "pending" statusdagilarni tekshiramiz
+            waiting = [p for p in pending if p.get("status") == "pending" and p.get("checkout_payment_id")]
+            if not waiting:
+                continue
+
+            changed = False
+            for payment in waiting:
+                checkout_id = payment.get("checkout_payment_id")
+                if not checkout_id:
+                    continue
+
+                result = await check_payment_status(checkout_id)
+                logging.info(f"Monitor tekshiruv #{checkout_id}: {result}")
+
+                is_paid = (
+                    result.get("status") == "success" and
+                    result.get("data", {}).get("status") == "paid"
+                )
+
+                if is_paid:
+                    payment["status"] = "approved"
+                    changed = True
+                    user_id = payment["user_id"]
+                    payment_type = payment.get("type", "ad")
+                    now = get_time_tashkent()
+
+                    logging.info(f"✅ To'lov tasdiqlandi! User: {user_id}, Type: {payment_type}, Amount: {payment['amount']}")
+
+                    # ===== E'LON TO'LOVI =====
+                    if payment_type == "ad":
+                        users = data.get("users", [])
+                        for u in users:
+                            if u["user_id"] == user_id:
+                                u["paid_slots"] = u.get("paid_slots", 0) + 1
+                                break
+                        data["users"] = users
+                        try:
+                            await bot.send_message(
+                                user_id,
+                                "✅ <b>To'lovingiz qabul qilindi!</b>\n\n"
+                                "Endi e'lon berishingiz mumkin.\n"
+                                "👇 «📝 E'lon berish» tugmasini bosing.",
+                                parse_mode="HTML", reply_markup=get_main_menu()
+                            )
+                        except Exception as e:
+                            logging.error(f"Xabar yuborishda xato: {e}")
+
+                    # ===== UC TO'LOVI =====
+                    elif payment_type == "uc":
+                        uc_data = payment.get("order_data", {})
+                        uc_amount = uc_data.get("uc_amount", 0)
+                        pubg_id = uc_data.get("pubg_id", "—")
+                        price = uc_data.get("price", 0)
+                        full_name = payment.get("full_name", "")
+                        username = payment.get("username", "—")
+                        order_db_id = get_next_id(data)
+                        orders = data.get("uc_orders", [])
+                        orders.append({
+                            "id": order_db_id, "user_id": user_id,
+                            "full_name": full_name, "username": username,
+                            "uc_amount": uc_amount, "price": price,
+                            "pubg_id": pubg_id, "screenshot_id": None,
+                            "status": "payment_confirmed",
+                            "payment_method": "auto", "order_date": now
+                        })
+                        data["uc_orders"] = orders
+                        admin_text = (
+                            f"🛒 <b>UC BUYURTMA — TO'LOV TASDIQLANDI!</b>\n\n"
+                            f"👤 {full_name} | @{username}\n"
+                            f"🆔 ID: <code>{user_id}</code>\n\n"
+                            f"💎 UC: <b>{uc_amount} UC</b>\n"
+                            f"💰 To'lov: <b>{price:,} so'm (AUTO ✅)</b>\n\n".replace(",", " ") +
+                            f"🎮 PUBG ID: <code>{pubg_id}</code>\n📅 {now}"
+                        )
+                        btn = InlineKeyboardMarkup(inline_keyboard=[[
+                            InlineKeyboardButton(text="✅ UC Yuborildi", callback_data=f"uc_approve_{user_id}_{order_db_id}"),
+                            InlineKeyboardButton(text="❌ Bekor", callback_data=f"uc_reject_{user_id}_{order_db_id}")
+                        ]])
+                        try:
+                            await bot.send_message(ADMIN_ID, admin_text, parse_mode="HTML", reply_markup=btn)
+                        except:
+                            pass
+                        try:
+                            await bot.send_message(
+                                user_id,
+                                f"✅ <b>To'lovingiz qabul qilindi!</b>\n\n"
+                                f"💎 <b>{uc_amount} UC</b> tez orada profilingizga yuboriladi.\n"
+                                f"🎮 PUBG ID: <code>{pubg_id}</code>\n\n⏳ Admin UC ni yuborishini kuting.",
+                                parse_mode="HTML", reply_markup=get_main_menu()
+                            )
+                        except Exception as e:
+                            logging.error(f"UC xabar xato: {e}")
+
+                    # ===== STARS TO'LOVI =====
+                    elif payment_type == "stars":
+                        stars_data = payment.get("order_data", {})
+                        stars_amount = stars_data.get("stars_amount", 0)
+                        stars_price = stars_data.get("price", 0)
+                        target_type = stars_data.get("target_type", "me")
+                        target_username = stars_data.get("target_username", "—")
+                        full_name = payment.get("full_name", "")
+                        username = payment.get("username", "—")
+                        order_db_id = get_next_id(data)
+                        orders = data.get("stars_orders", [])
+                        orders.append({
+                            "id": order_db_id, "user_id": user_id,
+                            "full_name": full_name, "username": username,
+                            "stars_amount": stars_amount, "price": stars_price,
+                            "target_type": target_type, "target_username": target_username,
+                            "receipt_id": None, "status": "payment_confirmed",
+                            "payment_method": "auto", "order_date": now
+                        })
+                        data["stars_orders"] = orders
+                        target_text = f"O'ziga (@{target_username})" if target_type == "me" else f"Do'stiga (@{target_username})"
+                        admin_text = (
+                            f"⭐ <b>STARS BUYURTMA — TO'LOV TASDIQLANDI!</b>\n\n"
+                            f"👤 {full_name} | @{username}\n"
+                            f"🆔 ID: <code>{user_id}</code>\n\n"
+                            f"⭐ Stars: <b>{stars_amount} Stars</b>\n"
+                            f"💰 To'lov: <b>{stars_price:,} so'm (AUTO ✅)</b>\n\n".replace(",", " ") +
+                            f"🎯 Kimga: <b>{target_text}</b>\n📅 {now}"
+                        )
+                        btn = InlineKeyboardMarkup(inline_keyboard=[[
+                            InlineKeyboardButton(text="✅ Stars Yuborildi", callback_data=f"stars_approve_{user_id}_{order_db_id}"),
+                            InlineKeyboardButton(text="❌ Bekor", callback_data=f"stars_reject_{user_id}_{order_db_id}")
+                        ]])
+                        try:
+                            await bot.send_message(ADMIN_ID, admin_text, parse_mode="HTML", reply_markup=btn)
+                        except:
+                            pass
+                        try:
+                            await bot.send_message(
+                                user_id,
+                                f"✅ <b>To'lovingiz qabul qilindi!</b>\n\n"
+                                f"⭐ <b>{stars_amount} Stars</b> tez orada yuboriladi.\n"
+                                f"🎯 Kimga: {target_text}\n\n⏳ Admin Stars ni yuborishini kuting.",
+                                parse_mode="HTML", reply_markup=get_main_menu()
+                            )
+                        except Exception as e:
+                            logging.error(f"Stars xabar xato: {e}")
+
+                    # ===== PREMIUM TO'LOVI =====
+                    elif payment_type == "premium":
+                        prem_data = payment.get("order_data", {})
+                        duration = prem_data.get("duration", "")
+                        prem_price = prem_data.get("price", 0)
+                        target_username = prem_data.get("target_username", "—")
+                        full_name = payment.get("full_name", "")
+                        username = payment.get("username", "—")
+                        order_db_id = get_next_id(data)
+                        orders = data.get("premium_orders", [])
+                        orders.append({
+                            "id": order_db_id, "user_id": user_id,
+                            "full_name": full_name, "username": username,
+                            "duration": duration, "price": prem_price,
+                            "target_username": target_username, "receipt_id": None,
+                            "status": "payment_confirmed",
+                            "payment_method": "auto", "order_date": now
+                        })
+                        data["premium_orders"] = orders
+                        admin_text = (
+                            f"💜 <b>PREMIUM BUYURTMA — TO'LOV TASDIQLANDI!</b>\n\n"
+                            f"👤 {full_name} | @{username}\n"
+                            f"🆔 ID: <code>{user_id}</code>\n\n"
+                            f"⭐ Muddat: <b>{duration}</b>\n"
+                            f"💰 To'lov: <b>{prem_price:,} so'm (AUTO ✅)</b>\n\n".replace(",", " ") +
+                            f"🎯 Profil: <code>@{target_username}</code>\n📅 {now}"
+                        )
+                        btn = InlineKeyboardMarkup(inline_keyboard=[[
+                            InlineKeyboardButton(text="✅ Premium Ulandi", callback_data=f"premium_approve_{user_id}_{order_db_id}"),
+                            InlineKeyboardButton(text="❌ Bekor", callback_data=f"premium_reject_{user_id}_{order_db_id}")
+                        ]])
+                        try:
+                            await bot.send_message(ADMIN_ID, admin_text, parse_mode="HTML", reply_markup=btn)
+                        except:
+                            pass
+                        try:
+                            await bot.send_message(
+                                user_id,
+                                f"✅ <b>To'lovingiz qabul qilindi!</b>\n\n"
+                                f"💜 <b>{duration}</b> Telegram Premium tez orada ulanadi.\n"
+                                f"👤 Profil: <code>@{target_username}</code>\n\n⏳ Admin Premium ni ulashini kuting.",
+                                parse_mode="HTML", reply_markup=get_main_menu()
+                            )
+                        except Exception as e:
+                            logging.error(f"Premium xabar xato: {e}")
+
+            if changed:
+                data["pending_payments"] = pending
+                await jb_write(data)
+
+        except Exception as e:
+            logging.error(f"⚠️ Monitor xatosi: {e}")
 
 # ================== FSM HOLATLAR ==================
 class AdForm(StatesGroup):
@@ -206,9 +411,8 @@ async def check_subscription(user_id):
             pass
     return unsubbed
 
-# ================== TO'LOV TUGMALAR (3 xil rang emoji) ==================
+# ================== TO'LOV TUGMALAR ==================
 def get_payment_choice_keyboard(auto_cb: str, manual_cb: str) -> InlineKeyboardMarkup:
-    """🟢 Auto | 🔵 Manual - 2 xil rangli tugma"""
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="🟢 ⚡ Auto to'lov (Checkout.uz)", callback_data=auto_cb)],
         [InlineKeyboardButton(text="🔵 👨‍💼 Admin tasdiqlagan to'lov", callback_data=manual_cb)],
@@ -216,35 +420,32 @@ def get_payment_choice_keyboard(auto_cb: str, manual_cb: str) -> InlineKeyboardM
 
 async def send_auto_payment_link(
     call: CallbackQuery,
-    order_id: int,
+    pending_payment: dict,
     amount: int,
     description: str,
     fallback_cb: str,
     data: dict
 ):
-    """Checkout.uz to'lov havolasini yuboradi"""
+    """Checkout.uz create_payment orqali to'lov havolasini yaratadi"""
     await call.answer("⏳ To'lov havolasi yaratilmoqda...")
 
-    result = await create_checkout_payment(
-        order_id=order_id,
-        amount=amount,
-        description=description,
-        user_id=call.from_user.id
-    )
+    result = await create_checkout_payment(amount=amount, description=description)
 
-    # Checkout.uz turli kalitlar bilan qaytarishi mumkin
-    pay_url = (
-        result.get("payment_url") or
-        result.get("url") or
-        result.get("redirect_url") or
-        result.get("data", {}).get("payment_url") or
-        result.get("data", {}).get("url") or
-        ""
-    )
+    pay_url = None
+    checkout_payment_id = None
 
-    logging.info(f"pay_url={pay_url}, full result={result}")
+    if result.get("status") == "success":
+        payment_data = result.get("payment", {})
+        pay_url = payment_data.get("_url")
+        checkout_payment_id = payment_data.get("_id")
 
-    if pay_url:
+    logging.info(f"pay_url={pay_url}, checkout_id={checkout_payment_id}, full={result}")
+
+    if pay_url and checkout_payment_id:
+        # pending_payment ga checkout_payment_id ni saqlaymiz
+        pending_payment["checkout_payment_id"] = checkout_payment_id
+        await jb_write(data)
+
         btn = InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="🟢 💳 To'lovni amalga oshirish", url=pay_url)],
             [InlineKeyboardButton(text="🔵 👨‍💼 Manual to'lovga o'tish", callback_data=fallback_cb)],
@@ -254,7 +455,7 @@ async def send_auto_payment_link(
             f"💰 Summa: <b>{amount:,} so'm</b>\n\n".replace(",", " ") +
             f"👇 Yashil tugmani bosib to'lovni amalga oshiring.\n"
             f"✅ To'lov tasdiqlangach bot <b>avtomatik xabar yuboradi</b>.\n\n"
-            f"⏳ To'lovdan keyin 1-2 daqiqa kuting."
+            f"⏳ To'lovdan keyin 10-20 soniya kuting."
         )
         try:
             await call.message.edit_text(text, reply_markup=btn, parse_mode="HTML")
@@ -390,7 +591,7 @@ def get_stars_prices_keyboard_from_data(prices, page=0):
     for item in current_prices:
         rows.append([InlineKeyboardButton(
             text=f"⭐ {item['stars_amount']} Stars — {item['price']:,} so'm".replace(",", " "),
-            callback_data=f"buy_stars_{item['id']}_{item['stars_amount']}_{item['price']}"
+            callback_data=f"buy_stars_{item['stars_amount']}_{item['price']}"
         )])
     nav_row = []
     if page > 0:
@@ -537,8 +738,7 @@ async def pay_ad_auto_cb(call: CallbackQuery, state: FSMContext):
         price_int = 50000
 
     order_id = get_next_id(data)
-    pending_payments = data.get("pending_payments", [])
-    pending_payments.append({
+    pending_payment = {
         "id": order_id,
         "user_id": call.from_user.id,
         "full_name": call.from_user.full_name,
@@ -546,13 +746,15 @@ async def pay_ad_auto_cb(call: CallbackQuery, state: FSMContext):
         "amount": price_int,
         "type": "ad",
         "status": "pending",
+        "checkout_payment_id": None,
         "created_at": get_time_tashkent()
-    })
+    }
+    pending_payments = data.get("pending_payments", [])
+    pending_payments.append(pending_payment)
     data["pending_payments"] = pending_payments
-    await jb_write(data)
 
     await send_auto_payment_link(
-        call=call, order_id=order_id, amount=price_int,
+        call=call, pending_payment=pending_payment, amount=price_int,
         description=f"E'lon joylash to'lovi #{order_id}",
         fallback_cb="pay_ad_manual_start", data=data
     )
@@ -596,217 +798,16 @@ async def get_ad_receipt(message: Message, state: FSMContext):
 async def get_ad_receipt_wrong(message: Message):
     await message.answer("❗️ Iltimos, <b>to'lov cheki rasmini</b> yuboring!", parse_mode="HTML")
 
-# ================== CHECKOUT.UZ WEBHOOK ==================
-async def handle_checkout_webhook(request: web.Request) -> web.Response:
-    try:
-        body = await request.json()
-    except:
-        return web.Response(status=400, text="Invalid JSON")
-
-    logging.info(f"Checkout webhook keldi: {body}")
-
-    # Imzo tekshirish (agar sign bo'lsa)
-    if "sign" in body:
-        if not verify_checkout_webhook(body, CHECKOUT_SECRET_KEY):
-            logging.warning("Checkout webhook imzosi noto'g'ri!")
-            return web.Response(status=403, text="Invalid signature")
-
-    status = body.get("status") or body.get("payment_status") or ""
-    order_id_str = body.get("order_id", "")
-    try:
-        order_id = int(order_id_str)
-    except:
-        return web.Response(status=200, text="OK")
-
-    if status in ("paid", "success", "completed", "PAID", "SUCCESS", "COMPLETED"):
-        data = await jb_read()
-        pending_payments = data.get("pending_payments", [])
-        payment = next((p for p in pending_payments if p["id"] == order_id), None)
-
-        if payment and payment["status"] == "pending":
-            user_id = payment["user_id"]
-            payment_type = payment.get("type", "ad")
-            payment["status"] = "approved"
-            data["pending_payments"] = pending_payments
-            now = get_time_tashkent()
-
-            # ===== E'LON TO'LOVI =====
-            if payment_type == "ad":
-                users = data.get("users", [])
-                for u in users:
-                    if u["user_id"] == user_id:
-                        u["paid_slots"] = u.get("paid_slots", 0) + 1
-                        break
-                data["users"] = users
-                await jb_write(data)
-                try:
-                    await bot.send_message(
-                        user_id,
-                        "✅ <b>To'lovingiz qabul qilindi!</b>\n\n"
-                        "Endi e'lon berishingiz mumkin.\n"
-                        "👇 «📝 E'lon berish» tugmasini bosing.",
-                        parse_mode="HTML", reply_markup=get_main_menu()
-                    )
-                except Exception as e:
-                    logging.error(f"Xabar yuborishda xato: {e}")
-
-            # ===== UC TO'LOVI =====
-            elif payment_type == "uc":
-                uc_data = payment.get("order_data", {})
-                uc_amount = uc_data.get("uc_amount", 0)
-                pubg_id = uc_data.get("pubg_id", "—")
-                price = uc_data.get("price", 0)
-                full_name = payment.get("full_name", "")
-                username = payment.get("username", "—")
-                order_db_id = get_next_id(data)
-                orders = data.get("uc_orders", [])
-                orders.append({
-                    "id": order_db_id, "user_id": user_id,
-                    "full_name": full_name, "username": username,
-                    "uc_amount": uc_amount, "price": price,
-                    "pubg_id": pubg_id, "screenshot_id": None,
-                    "status": "payment_confirmed",
-                    "payment_method": "auto", "order_date": now
-                })
-                data["uc_orders"] = orders
-                await jb_write(data)
-                admin_text = (
-                    f"🛒 <b>UC BUYURTMA — TO'LOV TASDIQLANDI!</b>\n\n"
-                    f"👤 {full_name} | @{username}\n"
-                    f"🆔 ID: <code>{user_id}</code>\n\n"
-                    f"💎 UC: <b>{uc_amount} UC</b>\n"
-                    f"💰 To'lov: <b>{price:,} so'm (AUTO ✅)</b>\n\n".replace(",", " ") +
-                    f"🎮 PUBG ID: <code>{pubg_id}</code>\n📅 {now}"
-                )
-                btn = InlineKeyboardMarkup(inline_keyboard=[[
-                    InlineKeyboardButton(text="✅ UC Yuborildi", callback_data=f"uc_approve_{user_id}_{order_db_id}"),
-                    InlineKeyboardButton(text="❌ Bekor", callback_data=f"uc_reject_{user_id}_{order_db_id}")
-                ]])
-                try:
-                    await bot.send_message(ADMIN_ID, admin_text, parse_mode="HTML", reply_markup=btn)
-                except:
-                    pass
-                try:
-                    await bot.send_message(
-                        user_id,
-                        f"✅ <b>To'lovingiz qabul qilindi!</b>\n\n"
-                        f"💎 <b>{uc_amount} UC</b> tez orada profilingizga yuboriladi.\n"
-                        f"🎮 PUBG ID: <code>{pubg_id}</code>\n\n⏳ Admin UC ni yuborishini kuting.",
-                        parse_mode="HTML", reply_markup=get_main_menu()
-                    )
-                except Exception as e:
-                    logging.error(f"UC xabar xato: {e}")
-
-            # ===== STARS TO'LOVI =====
-            elif payment_type == "stars":
-                stars_data = payment.get("order_data", {})
-                stars_amount = stars_data.get("stars_amount", 0)
-                stars_price = stars_data.get("price", 0)
-                target_type = stars_data.get("target_type", "me")
-                target_username = stars_data.get("target_username", "—")
-                full_name = payment.get("full_name", "")
-                username = payment.get("username", "—")
-                order_db_id = get_next_id(data)
-                orders = data.get("stars_orders", [])
-                orders.append({
-                    "id": order_db_id, "user_id": user_id,
-                    "full_name": full_name, "username": username,
-                    "stars_amount": stars_amount, "price": stars_price,
-                    "target_type": target_type, "target_username": target_username,
-                    "receipt_id": None, "status": "payment_confirmed",
-                    "payment_method": "auto", "order_date": now
-                })
-                data["stars_orders"] = orders
-                await jb_write(data)
-                target_text = f"O'ziga (@{target_username})" if target_type == "me" else f"Do'stiga (@{target_username})"
-                admin_text = (
-                    f"⭐ <b>STARS BUYURTMA — TO'LOV TASDIQLANDI!</b>\n\n"
-                    f"👤 {full_name} | @{username}\n"
-                    f"🆔 ID: <code>{user_id}</code>\n\n"
-                    f"⭐ Stars: <b>{stars_amount} Stars</b>\n"
-                    f"💰 To'lov: <b>{stars_price:,} so'm (AUTO ✅)</b>\n\n".replace(",", " ") +
-                    f"🎯 Kimga: <b>{target_text}</b>\n📅 {now}"
-                )
-                btn = InlineKeyboardMarkup(inline_keyboard=[[
-                    InlineKeyboardButton(text="✅ Stars Yuborildi", callback_data=f"stars_approve_{user_id}_{order_db_id}"),
-                    InlineKeyboardButton(text="❌ Bekor", callback_data=f"stars_reject_{user_id}_{order_db_id}")
-                ]])
-                try:
-                    await bot.send_message(ADMIN_ID, admin_text, parse_mode="HTML", reply_markup=btn)
-                except:
-                    pass
-                try:
-                    await bot.send_message(
-                        user_id,
-                        f"✅ <b>To'lovingiz qabul qilindi!</b>\n\n"
-                        f"⭐ <b>{stars_amount} Stars</b> tez orada yuboriladi.\n"
-                        f"🎯 Kimga: {target_text}\n\n⏳ Admin Stars ni yuborishini kuting.",
-                        parse_mode="HTML", reply_markup=get_main_menu()
-                    )
-                except Exception as e:
-                    logging.error(f"Stars xabar xato: {e}")
-
-            # ===== PREMIUM TO'LOVI =====
-            elif payment_type == "premium":
-                prem_data = payment.get("order_data", {})
-                duration = prem_data.get("duration", "")
-                prem_price = prem_data.get("price", 0)
-                target_username = prem_data.get("target_username", "—")
-                full_name = payment.get("full_name", "")
-                username = payment.get("username", "—")
-                order_db_id = get_next_id(data)
-                orders = data.get("premium_orders", [])
-                orders.append({
-                    "id": order_db_id, "user_id": user_id,
-                    "full_name": full_name, "username": username,
-                    "duration": duration, "price": prem_price,
-                    "target_username": target_username, "receipt_id": None,
-                    "status": "payment_confirmed",
-                    "payment_method": "auto", "order_date": now
-                })
-                data["premium_orders"] = orders
-                await jb_write(data)
-                admin_text = (
-                    f"💜 <b>PREMIUM BUYURTMA — TO'LOV TASDIQLANDI!</b>\n\n"
-                    f"👤 {full_name} | @{username}\n"
-                    f"🆔 ID: <code>{user_id}</code>\n\n"
-                    f"⭐ Muddat: <b>{duration}</b>\n"
-                    f"💰 To'lov: <b>{prem_price:,} so'm (AUTO ✅)</b>\n\n".replace(",", " ") +
-                    f"🎯 Profil: <code>@{target_username}</code>\n📅 {now}"
-                )
-                btn = InlineKeyboardMarkup(inline_keyboard=[[
-                    InlineKeyboardButton(text="✅ Premium Ulandi", callback_data=f"premium_approve_{user_id}_{order_db_id}"),
-                    InlineKeyboardButton(text="❌ Bekor", callback_data=f"premium_reject_{user_id}_{order_db_id}")
-                ]])
-                try:
-                    await bot.send_message(ADMIN_ID, admin_text, parse_mode="HTML", reply_markup=btn)
-                except:
-                    pass
-                try:
-                    await bot.send_message(
-                        user_id,
-                        f"✅ <b>To'lovingiz qabul qilindi!</b>\n\n"
-                        f"💜 <b>{duration}</b> Telegram Premium tez orada ulanadi.\n"
-                        f"👤 Profil: <code>@{target_username}</code>\n\n⏳ Admin Premium ni ulashini kuting.",
-                        parse_mode="HTML", reply_markup=get_main_menu()
-                    )
-                except Exception as e:
-                    logging.error(f"Premium xabar xato: {e}")
-
-    return web.Response(status=200, text="OK")
-
-async def handle_payment_return(request: web.Request) -> web.Response:
-    return web.Response(
-        text="<html><body><h2>✅ To'lov muvaffaqiyatli!</h2><p>Botga qaytib davom eting.</p></body></html>",
-        content_type="text/html"
-    )
-
 # ================== E'LON FORMI ==================
 @router.message(AdForm.video, F.video)
 async def get_video(message: Message, state: FSMContext):
     await state.update_data(video=message.video.file_id)
     await message.answer("Akkaunt levelini kiriting:")
     await state.set_state(AdForm.level)
+
+@router.message(AdForm.video)
+async def get_video_wrong(message: Message):
+    await message.answer("❗️ Iltimos, <b>video</b> yuboring!", parse_mode="HTML")
 
 @router.message(AdForm.level)
 async def get_level(message: Message, state: FSMContext):
@@ -965,19 +966,21 @@ async def uc_pay_auto_cb(call: CallbackQuery, state: FSMContext):
     pubg_id = st['pubg_id']
     data = await jb_read()
     order_id = get_next_id(data)
-    pending_payments = data.get("pending_payments", [])
-    pending_payments.append({
+    pending_payment = {
         "id": order_id, "user_id": call.from_user.id,
         "full_name": call.from_user.full_name,
         "username": call.from_user.username or "—",
         "amount": price, "type": "uc", "status": "pending",
+        "checkout_payment_id": None,
         "created_at": get_time_tashkent(),
         "order_data": {"uc_amount": uc_amount, "pubg_id": pubg_id, "price": price}
-    })
+    }
+    pending_payments = data.get("pending_payments", [])
+    pending_payments.append(pending_payment)
     data["pending_payments"] = pending_payments
-    await jb_write(data)
+
     await send_auto_payment_link(
-        call=call, order_id=order_id, amount=price,
+        call=call, pending_payment=pending_payment, amount=price,
         description=f"{uc_amount} UC PUBG ID:{pubg_id} #{order_id}",
         fallback_cb="uc_pay_manual", data=data
     )
@@ -1146,6 +1149,7 @@ async def stars_back_cb(call: CallbackQuery):
 @router.callback_query(F.data.startswith("buy_stars_"))
 async def buy_stars_cb(call: CallbackQuery, state: FSMContext):
     parts = call.data.split("_")
+    # buy_stars_{amount}_{price}
     stars_amount = int(parts[2])
     price = int(parts[3])
     await state.update_data(stars_amount=stars_amount, stars_price=price)
@@ -1208,19 +1212,21 @@ async def stars_pay_auto_cb(call: CallbackQuery, state: FSMContext):
     target_username = st.get('target_username', '—')
     data = await jb_read()
     order_id = get_next_id(data)
-    pending_payments = data.get("pending_payments", [])
-    pending_payments.append({
+    pending_payment = {
         "id": order_id, "user_id": call.from_user.id,
         "full_name": call.from_user.full_name,
         "username": call.from_user.username or "—",
         "amount": price, "type": "stars", "status": "pending",
+        "checkout_payment_id": None,
         "created_at": get_time_tashkent(),
         "order_data": {"stars_amount": stars_amount, "price": price, "target_type": target_type, "target_username": target_username}
-    })
+    }
+    pending_payments = data.get("pending_payments", [])
+    pending_payments.append(pending_payment)
     data["pending_payments"] = pending_payments
-    await jb_write(data)
+
     await send_auto_payment_link(
-        call=call, order_id=order_id, amount=price,
+        call=call, pending_payment=pending_payment, amount=price,
         description=f"{stars_amount} Stars @{target_username} #{order_id}",
         fallback_cb="stars_pay_manual", data=data
     )
@@ -1421,19 +1427,21 @@ async def premium_pay_auto_cb(call: CallbackQuery, state: FSMContext):
     target_username = st.get('target_username', '—')
     data = await jb_read()
     order_id = get_next_id(data)
-    pending_payments = data.get("pending_payments", [])
-    pending_payments.append({
+    pending_payment = {
         "id": order_id, "user_id": call.from_user.id,
         "full_name": call.from_user.full_name,
         "username": call.from_user.username or "—",
         "amount": price, "type": "premium", "status": "pending",
+        "checkout_payment_id": None,
         "created_at": get_time_tashkent(),
         "order_data": {"duration": duration, "price": price, "target_username": target_username}
-    })
+    }
+    pending_payments = data.get("pending_payments", [])
+    pending_payments.append(pending_payment)
     data["pending_payments"] = pending_payments
-    await jb_write(data)
+
     await send_auto_payment_link(
-        call=call, order_id=order_id, amount=price,
+        call=call, pending_payment=pending_payment, amount=price,
         description=f"Premium {duration} @{target_username} #{order_id}",
         fallback_cb="premium_pay_manual", data=data
     )
@@ -1782,6 +1790,7 @@ async def admin_stats_btn(message: Message):
     ads = data.get("ads", [])
     uc_approved = sum(1 for o in uc_orders if o.get("status") == "approved")
     ads_approved = sum(1 for a in ads if a.get("status") == "approved")
+    pending_count = sum(1 for p in data.get("pending_payments", []) if p.get("status") == "pending")
     await message.answer(
         f"📊 <b>BOT STATISTIKASI</b>\n\n"
         f"👥 Umumiy foydalanuvchilar: <b>{len(users)} ta</b>\n"
@@ -1789,6 +1798,7 @@ async def admin_stats_btn(message: Message):
         f"💎 UC buyurtmalar: <b>{len(uc_orders)} ta</b> (tasdiqlangan: {uc_approved})\n"
         f"⭐ Stars buyurtmalar: <b>{len(stars_orders)} ta</b>\n"
         f"💜 Premium buyurtmalar: <b>{len(premium_orders)} ta</b>\n"
+        f"⏳ Kutilayotgan to'lovlar: <b>{pending_count} ta</b>\n"
         f"🕐 Vaqt: {get_time_tashkent()}",
         parse_mode="HTML"
     )
@@ -1944,7 +1954,7 @@ async def admin_uc_orders_btn(message: Message):
         return
     text = "📦 <b>OXIRGI 20 UC BUYURTMA:</b>\n\n"
     for o in orders:
-        emoji = "⏳" if o["status"] == "pending" else ("✅" if o["status"] == "approved" else "❌")
+        emoji = "⏳" if o["status"] == "pending" else ("✅" if o["status"] in ("approved", "payment_confirmed") else "❌")
         method = "🤖" if o.get("payment_method") == "auto" else "👤"
         text += f"{emoji}{method} #{o['id']} | {o['full_name']} | {o['uc_amount']} UC | {o['price']:,} so'm | {o['order_date']}\n".replace(",", " ")
     await message.answer(text, parse_mode="HTML")
@@ -2025,7 +2035,7 @@ async def admin_stars_orders_btn(message: Message):
         return
     text = "⭐ <b>OXIRGI 20 STARS BUYURTMA:</b>\n\n"
     for o in orders:
-        emoji = "⏳" if o["status"] == "pending" else ("✅" if o["status"] == "approved" else "❌")
+        emoji = "⏳" if o["status"] == "pending" else ("✅" if o["status"] in ("approved", "payment_confirmed") else "❌")
         method = "🤖" if o.get("payment_method") == "auto" else "👤"
         text += f"{emoji}{method} #{o['id']} | {o['full_name']} | {o['stars_amount']} Stars | @{o['target_username']} | {o['order_date']}\n"
     await message.answer(text, parse_mode="HTML")
@@ -2098,7 +2108,7 @@ async def admin_premium_orders_btn(message: Message):
         return
     text = "💜 <b>OXIRGI 20 PREMIUM BUYURTMA:</b>\n\n"
     for o in orders:
-        emoji = "⏳" if o["status"] == "pending" else ("✅" if o["status"] == "approved" else "❌")
+        emoji = "⏳" if o["status"] == "pending" else ("✅" if o["status"] in ("approved", "payment_confirmed") else "❌")
         method = "🤖" if o.get("payment_method") == "auto" else "👤"
         text += f"{emoji}{method} #{o['id']} | {o['full_name']} | {o['duration']} | @{o['target_username']} | {o['order_date']}\n"
     await message.answer(text, parse_mode="HTML")
@@ -2285,27 +2295,15 @@ async def check_bot_status(message: Message):
         member = await bot.get_chat_member(MAIN_CHANNEL_ID, me.id)
         status = member.status
         can_post = getattr(member, 'can_post_messages', False)
-        ha = "Ha"
-        yoq = "Yoq"
-        ok = "Hammasi yaxshi!"
-        xato = "Botni kanalga ADMIN qilib qoshish kerak!"
         await message.answer(
-            f"Bot: @{me.username}\n"
-            f"Kanal: {MAIN_CHANNEL_ID}\n"
-            f"Status: {status}\n"
-            f"Post yuborish: {ha if can_post else yoq}\n\n"
-            f"{ok if can_post else xato}"
+            f"🤖 Bot: @{me.username}\n"
+            f"📢 Kanal: {MAIN_CHANNEL_ID}\n"
+            f"📋 Status: {status}\n"
+            f"✍️ Post yuborish: {'Ha ✅' if can_post else 'Yoq ❌'}\n\n"
+            f"{'✅ Hammasi yaxshi!' if can_post else '⚠️ Botni kanalga ADMIN qilib qo\'shing!'}"
         )
     except Exception as e:
         await message.answer(f"❌ Xatolik: {e}")
-
-# ================== AIOHTTP WEB SERVER ==================
-async def create_web_app():
-    app = web.Application()
-    app.router.add_post("/webhook/checkout", handle_checkout_webhook)
-    app.router.add_get("/payment_return/{user_id}", handle_payment_return)
-    app.router.add_get("/", lambda r: web.Response(text="Bot is running! ✅"))
-    return app
 
 # ================== ASOSIY ISHGA TUSHIRISH ==================
 async def main():
@@ -2319,15 +2317,12 @@ async def main():
 
     dp.include_router(router)
 
-    web_app = await create_web_app()
-    runner = web.AppRunner(web_app)
-    await runner.setup()
-    site = web.TCPSite(runner, "0.0.0.0", 8080)
-    await site.start()
-    print("✅ Web server port 8080 da ishga tushdi!")
-    print(f"✅ Webhook URL: {WEBHOOK_BASE_URL}/webhook/checkout")
-    print("✅ Bot ishga tushdi...")
+    # To'lov monitorini orqa fonda ishga tushiramiz
+    asyncio.create_task(payment_monitor())
+    print("✅ To'lov monitori ishga tushdi! (Har 10 soniyada tekshiradi)")
 
+    print("✅ Bot ishga tushdi... (Polling rejimida)")
+    await bot.delete_webhook(drop_pending_updates=True)
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
