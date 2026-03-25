@@ -37,6 +37,7 @@ JSONBIN_BASE_URL = "https://api.jsonbin.io/v3"
 
 # ================== JSONBIN.IO YORDAMCHI FUNKSIYALAR ==================
 async def jb_read() -> dict:
+    """Jsonbin dan barcha ma'lumotlarni o'qish"""
     url = f"{JSONBIN_BASE_URL}/b/{JSONBIN_BIN_ID}/latest"
     headers = {"X-Master-Key": JSONBIN_API_KEY}
     async with aiohttp.ClientSession() as session:
@@ -45,15 +46,17 @@ async def jb_read() -> dict:
             return data.get("record", {})
 
 async def jb_write(data: dict) -> bool:
-    url = f"{JSONBIN_BASE_URL}/b/{JSONBIN_BIN_ID}"
-    headers = {
-        "X-Master-Key": JSONBIN_API_KEY,        "Content-Type": "application/json"
+    """Jsonbin ga ma'lumotlarni yozish"""
+    url = f"{JSONBIN_BASE_URL}/b/{JSONBIN_BIN_ID}"    headers = {
+        "X-Master-Key": JSONBIN_API_KEY,
+        "Content-Type": "application/json"
     }
     async with aiohttp.ClientSession() as session:
         async with session.put(url, json=data, headers=headers) as resp:
             return resp.status == 200
 
 async def init_db():
+    """Boshlang'ich ma'lumotlar strukturasi"""
     data = await jb_read()
     changed = False
     
@@ -86,46 +89,22 @@ async def init_db():
         changed = True
     if "settings" not in data:
         data["settings"] = {
-            "price": "5000",
+            "price": "50000",
             "card": "8600 0000 0000 0000 (Ism Familiya)",
             "start_msg": "Salom {name}! Siz bu botdan PUBG Mobile akkauntingizni obzorini joylashingiz mumkin va u video kanalga joylanadi.",
             "site_url": "https://azizbekqiyomov55555-dev.github.io/Test-bot-"
         }
         changed = True
     if "next_id" not in data:
-        data["next_id"] = 1
-        changed = True
+        data["next_id"] = 1        changed = True
 
-    if changed:        await jb_write(data)
+    if changed:
+        await jb_write(data)
 
 def get_next_id(data: dict) -> int:
     nid = data.get("next_id", 1)
     data["next_id"] = nid + 1
     return nid
-
-# ================== CHECKOUT.UZ API FUNKSIYALARI ==================
-async def create_checkout_payment(amount: int, order_id: str, description: str, user_id: int):
-    url = f"{CHECKOUT_BASE_URL}/create_payment"
-    headers = {
-        "Authorization": f"Bearer {CHECKOUT_API_KEY}",
-        "Content-Type": "application/json"
-    }
-    payload = {
-        "amount": amount,
-        "description": description,
-        "order_id": order_id,
-        "callback_url": f"{WEBHOOK_URL}/webhook",
-        "success_url": f"{WEBHOOK_URL}/success",
-        "fail_url": f"{WEBHOOK_URL}/fail"
-    }
-    
-    async with aiohttp.ClientSession() as session:
-        async with session.post(url, json=payload, headers=headers) as resp:
-            result = await resp.json()
-            if result.get("status") == "success":
-                return result.get("payment", {}).get("_url")
-            else:
-                return None
 
 # ================== FSM HOLATLAR ==================
 class AdForm(StatesGroup):
@@ -145,7 +124,8 @@ class SupportForm(StatesGroup):
     msg = State()
 
 class AdminForm(StatesGroup):
-    start_msg = State()    price = State()
+    start_msg = State()
+    price = State()
     card = State()
     add_channel_id = State()
     add_channel_url = State()
@@ -165,8 +145,7 @@ class UCOrderForm(StatesGroup):
     pubg_screenshot = State()
     receipt = State()
 
-class StarsOrderForm(StatesGroup):
-    choose_target = State()
+class StarsOrderForm(StatesGroup):    choose_target = State()
     friend_username = State()
     receipt = State()
 
@@ -194,20 +173,28 @@ async def check_subscription(user_id):
     channels = data.get("channels", [])
     unsubbed = []
     for ch in channels:
-        try:            member = await bot.get_chat_member(ch["channel_id"], user_id)
+        try:
+            member = await bot.get_chat_member(ch["channel_id"], user_id)
             if member.status in ['left', 'kicked']:
                 unsubbed.append(ch["url"])
         except:
             pass
     return unsubbed
 
-# ================== ASOSIY MENU ==================
+# ================== ASOSIY MENU (RANGLI TUGMALAR) ==================
 def get_main_menu():
     kb = ReplyKeyboardMarkup(
         keyboard=[
-            [KeyboardButton(text="📝 E'lon berish", style="primary"), KeyboardButton(text="🆘 Yordam", style="danger")],
-            [KeyboardButton(text="🎮 PUBG MOBILE UC OLISH 💎", style="success")],
-            [KeyboardButton(text="⭐ TELEGRAM PREMIUM", style="danger"), KeyboardButton(text="🌟 STARS OLISH", style="primary")],
+            [
+                KeyboardButton(text="📝 E'lon berish", style="primary"),
+                KeyboardButton(text="🆘 Yordam", style="danger")
+            ],
+            [
+                KeyboardButton(text="🎮 PUBG MOBILE UC OLISH 💎", style="success")
+            ],
+            [
+                KeyboardButton(text="⭐ TELEGRAM PREMIUM", style="danger"),
+                KeyboardButton(text="🌟 STARS OLISH", style="primary")            ],
         ],
         resize_keyboard=True,
         is_persistent=True,
@@ -243,7 +230,8 @@ def get_uc_prices_keyboard_from_data(prices, page=0):
     if page > 0:
         nav_row.append(InlineKeyboardButton(text="⬅️ Oldingi", callback_data=f"uc_page_{page-1}", style="primary"))
     if page < total_pages - 1:
-        nav_row.append(InlineKeyboardButton(text="Keyingi ➡️", callback_data=f"uc_page_{page+1}", style="primary"))    if nav_row:
+        nav_row.append(InlineKeyboardButton(text="Keyingi ➡️", callback_data=f"uc_page_{page+1}", style="primary"))
+    if nav_row:
         rows.append(nav_row)
 
     rows.append([InlineKeyboardButton(text="🔙 Orqaga", callback_data="uc_back", style="danger")])
@@ -255,8 +243,7 @@ def get_stars_prices_keyboard_from_data(prices, page=0):
             [InlineKeyboardButton(text="❌ Hozircha narxlar kiritilmagan", callback_data="stars_no_prices", style="danger")]
         ])
     
-    ITEMS_PER_PAGE = 5
-    total_pages = (len(prices) + ITEMS_PER_PAGE - 1) // ITEMS_PER_PAGE
+    ITEMS_PER_PAGE = 5    total_pages = (len(prices) + ITEMS_PER_PAGE - 1) // ITEMS_PER_PAGE
     page = max(0, min(page, total_pages - 1))
     start = page * ITEMS_PER_PAGE
     end = start + ITEMS_PER_PAGE
@@ -292,7 +279,8 @@ def get_premium_prices_keyboard_from_data(prices, page=0):
     ITEMS_PER_PAGE = 5
     total_pages = (len(prices) + ITEMS_PER_PAGE - 1) // ITEMS_PER_PAGE
     page = max(0, min(page, total_pages - 1))
-    start = page * ITEMS_PER_PAGE    end = start + ITEMS_PER_PAGE
+    start = page * ITEMS_PER_PAGE
+    end = start + ITEMS_PER_PAGE
     current_prices = prices[start:end]
 
     rows = []
@@ -304,7 +292,6 @@ def get_premium_prices_keyboard_from_data(prices, page=0):
                 style="primary"
             )
         ])
-
     nav_row = []
     if page > 0:
         nav_row.append(InlineKeyboardButton(text="⬅️ Oldingi", callback_data=f"premium_page_{page-1}", style="primary"))
@@ -341,7 +328,8 @@ async def start_cmd(message: Message, state: FSMContext):
     if unsubbed:
         btn = InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text=f"📢 Kanal {i+1} — Obuna bo'lish", url=url, style="primary")]
-            for i, url in enumerate(unsubbed)        ] + [[InlineKeyboardButton(text="✅ Tasdiqlash", callback_data="check_sub", style="success")]])
+            for i, url in enumerate(unsubbed)
+        ] + [[InlineKeyboardButton(text="✅ Tasdiqlash", callback_data="check_sub", style="success")]])
         await message.answer("Botdan foydalanish uchun quyidagi kanallarga obuna bo'ling:", reply_markup=btn)
         return
 
@@ -353,13 +341,12 @@ async def check_sub_cb(call: CallbackQuery):
     unsubbed = await check_subscription(call.from_user.id)
     if unsubbed:
         await call.answer("Hali hamma kanallarga obuna bo'lmadingiz!", show_alert=True)
-    else:
-        await call.message.delete()
+    else:        await call.message.delete()
         data = await jb_read()
         start_text = data.get("settings", {}).get("start_msg", "Salom {name}!").replace("{name}", call.from_user.full_name)
         await call.message.answer(f"Rahmat! Obuna tasdiqlandi.\n\n{start_text}", reply_markup=get_main_menu())
 
-# ================== E'LON BERISH - CHECKOUT.UZ BILAN ==================
+# ================== MENU HANDLERLAR ==================
 @router.message(F.text == "📝 E'lon berish")
 async def menu_ad_cb(message: Message, state: FSMContext):
     unsubbed = await check_subscription(message.from_user.id)
@@ -380,115 +367,37 @@ async def menu_ad_cb(message: Message, state: FSMContext):
     pending = user.get("pending_approval", 0)
 
     if pending:
-        await message.answer("⏳ Sizning oldingi e'loningiz admin tomonidan ko'rib chiqilmoqda.\nAdmin tasdiqlaganidan so'ng yangi e'lon berishingiz mumkin.")
+        await message.answer(
+            "⏳ Sizning oldingi e'loningiz admin tomonidan ko'rib chiqilmoqda.\n"
+            "Admin tasdiqlaganidan so'ng yangi e'lon berishingiz mumkin."
+        )
         return
 
     if posted >= (1 + paid):
-        price_str = data.get("settings", {}).get("price", "5000")
-        try:
-            price = int(price_str)
-        except:
-            price = 5000
-            
-        order_id = f"ad_{message.from_user.id}_{get_next_id(data)}"        payment_url = await create_checkout_payment(
-            amount=price,
-            order_id=order_id,
-            description=f"E'lon joylash uchun to'lov (ID: {message.from_user.id})",
-            user_id=message.from_user.id
-        )
-
-        if payment_url:
-            btn = InlineKeyboardMarkup(inline_keyboard=[[
-                InlineKeyboardButton(text="💳 To'lov qilish", url=payment_url, style="success")
-            ]])
-            await message.answer(
-                f"Sizning bepul e'lonlar limitingiz tugagan.\n"
-                f"1-video bepul, 2-sidan boshlab pullik.\n"
-                f"E'lon narxi: {price:,} so'm.\n\n"
-                f"Quyidagi tugmani bosib to'lovni amalga oshiring:", 
-                reply_markup=btn, parse_mode="HTML"
-            )
-        else:
-            await message.answer("⚠️ To'lov tizimida xatolik yuz berdi. Iltimos, birozdan keyin urinib ko'ring yoki admin bilan bog'laning.")
+        price = data.get("settings", {}).get("price", "50000")
+        btn = InlineKeyboardMarkup(inline_keyboard=[[
+            InlineKeyboardButton(text="💳 To'lov qilish", callback_data="pay_ad", style="success")
+        ]])
+        await message.answer(
+            f"Sizning bepul e'lonlar limitingiz tugagan.\n"
+            f"1-video bepul, 2-sidan boshlab pullik.\n"
+            f"E'lon narxi: {price} so'm.", reply_markup=btn)
         return
 
     await message.answer("E'loningizni boshlaymiz.\nIltimos, akkaunt obzori videosini yuboring:")
     await state.set_state(AdForm.video)
 
-# ================== WEBHOOK HANDLER ==================
-async def handle_checkout_webhook(request):
-    try:
-        body = await request.read()
-        data_json = json.loads(body)
-        
-        logging.info(f"Webhook received: {data_json}")
-        
-        if data_json.get("status") == "success":
-            payment_data = data_json.get("data", {})
-            order_id = payment_data.get("order_id")
-            payment_status = payment_data.get("status")
-            
-            if payment_status == "paid" and order_id and order_id.startswith("ad_"):
-                parts = order_id.split("_")
-                if len(parts) >= 2:
-                    user_id = int(parts[1])
-                    
-                    db_data = await jb_read()
-                    users = db_data.get("users", [])
-                    for u in users:
-                        if u["user_id"] == user_id:
-                            u["paid_slots"] = u.get("paid_slots", 0) + 1
-                            break
-                    db_data["users"] = users                    await jb_write(db_data)
-                    
-                    try:
-                        await bot.send_message(
-                            user_id, 
-                            "✅ <b>To'lovingiz tasdiqlandi!</b>\n\nEndi yana e'lon joylashingiz mumkin. \"📝 E'lon berish\" tugmasini bosing.",
-                            parse_mode="HTML",
-                            reply_markup=get_main_menu()
-                        )
-                    except Exception as e:
-                        logging.error(f"Failed to send message to {user_id}: {e}")
-                        
-                    return web.Response(status=200, text="OK")
-        
-        return web.Response(status=200, text="Ignored")
-        
-    except Exception as e:
-        logging.error(f"Webhook error: {e}")
-        return web.Response(status=500, text="Error")
-
-async def handle_success(request):
-    return web.Response(status=200, text="Payment successful")
-
-async def handle_fail(request):
-    return web.Response(status=200, text="Payment failed")
-
-async def start_webhook_server():
-    app = web.Application()
-    app.router.add_post('/webhook', handle_checkout_webhook)
-    app.router.add_get('/success', handle_success)
-    app.router.add_get('/fail', handle_fail)
-    
-    runner = web.AppRunner(app)
-    await runner.setup()
-    site = web.TCPSite(runner, '0.0.0.0', 8080)
-    await site.start()
-    print("✅ Webhook server ishga tushdi (Port 8080)")
-
-# ================== YORDAM ==================
 @router.message(F.text == "🆘 Yordam")
 async def menu_help_cb(message: Message, state: FSMContext):
     await message.answer("Adminga xabaringizni yozib qoldiring:")
     await state.set_state(SupportForm.msg)
-
-# ================== PUBG MOBILE UC OLISH ==================
+# ================== 🎮 PUBG MOBILE UC OLISH ==================
 @router.message(F.text == "🎮 PUBG MOBILE UC OLISH 💎")
 async def uc_menu(message: Message, state: FSMContext):
     await state.clear()
     data = await jb_read()
-    prices = sorted(data.get("uc_prices", []), key=lambda x: x.get("position", 0))    text = (
+    prices = sorted(data.get("uc_prices", []), key=lambda x: x.get("position", 0))
+    text = (
         "🎮 <b>PUBG MOBILE UC OLISH</b>\n\n"
         "💎 Quyidagi narxlardan birini tanlang va to'lov qiling!\n"
         "⚡️ To'lov tasdiqlangandan so'ng UC tez yuboriladi.\n\n"
@@ -530,13 +439,13 @@ async def buy_uc_cb(call: CallbackQuery, state: FSMContext):
         f"💎 <b>{uc_amount} UC — {price:,} so'm</b>\n\n".replace(",", " ") +
         f"💳 <b>To'lov uchun karta:</b>\n<code>{card}</code>\n\n"
         f"📋 <b>Buyurtma berish bosqichlari:</b>\n"
-        f"1️⃣ Yuqoridagi kartaga <b>{price:,} so'm</b> o'tkazing\n".replace(",", " ") +
-        f"2️⃣ PUBG Mobile ga kiring va <b>profil ID raqamingizni</b> kiriting\n"
+        f"1️⃣ Yuqoridagi kartaga <b>{price:,} so'm</b> o'tkazing\n".replace(",", " ") +        f"2️⃣ PUBG Mobile ga kiring va <b>profil ID raqamingizni</b> kiriting\n"
         f"3️⃣ To'lov chekini yuboring\n\n"
         f"🔢 <b>Iltimos, PUBG ID raqamingizni kiriting:</b> "
     )
     await call.message.edit_text(text, parse_mode="HTML")
     await state.set_state(UCOrderForm.pubg_screenshot)
+
 @router.message(UCOrderForm.pubg_screenshot, F.text)
 async def get_pubg_id(message: Message, state: FSMContext):
     pubg_id = message.text
@@ -579,13 +488,13 @@ async def get_uc_receipt(message: Message, state: FSMContext):
         "username": message.from_user.username or "—",
         "uc_amount": uc_amount,
         "price": price,
-        "pubg_id": pubg_id,
-        "screenshot_id": receipt_id,
+        "pubg_id": pubg_id,        "screenshot_id": receipt_id,
         "status": "pending",
         "order_date": now
     })
     data["uc_orders"] = orders
     await jb_write(data)
+
     admin_text = (
         f"🛒 <b>YANGI UC BUYURTMA!</b>\n\n"
         f"👤 Foydalanuvchi: {message.from_user.full_name}\n"
@@ -628,14 +537,14 @@ async def uc_approve_cb(call: CallbackQuery):
     data = await jb_read()
     orders = data.get("uc_orders", [])
     order = next((o for o in orders if o["id"] == order_id), None)
-    if order:
-        order["status"] = "approved"
+    if order:        order["status"] = "approved"
         data["uc_orders"] = orders
         await jb_write(data)
         await bot.send_message(
             user_id,
             f"🎉 <b>Tabriklaymiz! UC profilingizga tushdi!</b>\n\n"
-            f"💎 <b>{order['uc_amount']} UC</b> akkauntingizga yuborildi!\n"            f"O'yiningizni oching va UC ni tekshiring.\n\n"
+            f"💎 <b>{order['uc_amount']} UC</b> akkauntingizga yuborildi!\n"
+            f"O'yiningizni oching va UC ni tekshiring.\n\n"
             f"🙏 Xarid uchun rahmat! ",
             parse_mode="HTML", reply_markup=get_main_menu()
         )
@@ -677,14 +586,14 @@ async def uc_reject_cb(call: CallbackQuery):
         pass
     await call.answer("❌ Buyurtma bekor qilindi. ", show_alert=True)
 
-# ================== STARS OLISH ==================
-@router.message(F.text == "🌟 STARS OLISH")
+# ================== 🌟 STARS OLISH ==================@router.message(F.text == "🌟 STARS OLISH")
 async def stars_menu(message: Message, state: FSMContext):
     await state.clear()
     data = await jb_read()
     prices = sorted(data.get("stars_prices", []), key=lambda x: x.get("position", 0))
     text = (
-        "🌟 <b>TELEGRAM STARS OLISH</b>\n\n"        "⭐ Quyidagi miqdorlardan birini tanlang!\n"
+        "🌟 <b>TELEGRAM STARS OLISH</b>\n\n"
+        "⭐ Quyidagi miqdorlardan birini tanlang!\n"
         "⚡️ To'lov tasdiqlangandan so'ng Stars tez yuboriladi.\n\n"
         "👇 Stars miqdorini tanlang:"
     )
@@ -726,14 +635,14 @@ async def buy_stars_cb(call: CallbackQuery, state: FSMContext):
         f"⭐ <b>{stars_amount} Stars — {price:,} so'm</b>\n\nStars kimga kerak? ".replace(",", " "),
         reply_markup=btn, parse_mode="HTML"
     )
-    await state.set_state(StarsOrderForm.choose_target)
-    await call.answer()
+    await state.set_state(StarsOrderForm.choose_target)    await call.answer()
 
 @router.callback_query(F.data == "stars_target_me", StarsOrderForm.choose_target)
 async def stars_target_me(call: CallbackQuery, state: FSMContext):
     st = await state.get_data()
     stars_amount = st['stars_amount']
-    price = st['stars_price']    data = await jb_read()
+    price = st['stars_price']
+    data = await jb_read()
     card = data.get("settings", {}).get("card", "")
     await state.update_data(target_type="me", target_username=call.from_user.username or str(call.from_user.id))
 
@@ -775,14 +684,14 @@ async def get_stars_friend_username(message: Message, state: FSMContext):
     )
     await message.answer(text, parse_mode="HTML")
     await state.set_state(StarsOrderForm.receipt)
-
 @router.message(StarsOrderForm.receipt, F.photo)
 async def get_stars_receipt(message: Message, state: FSMContext):
     st = await state.get_data()
     receipt_id = message.photo[-1].file_id
     stars_amount = st['stars_amount']
     price = st['stars_price']
-    target_type = st.get('target_type', 'me')    target_username = st.get('target_username', '—')
+    target_type = st.get('target_type', 'me')
+    target_username = st.get('target_username', '—')
     now = get_time_tashkent()
     data = await jb_read()
     order_id = get_next_id(data)
@@ -824,14 +733,14 @@ async def get_stars_receipt(message: Message, state: FSMContext):
         [InlineKeyboardButton(text="👤 Foydalanuvchiga o'tish", url=f"tg://user?id={message.from_user.id}", style="primary")]
     ])
 
-    await bot.send_photo(ADMIN_ID, photo=receipt_id, caption=admin_text, parse_mode="HTML", reply_markup=btn)
-    await message.answer(
+    await bot.send_photo(ADMIN_ID, photo=receipt_id, caption=admin_text, parse_mode="HTML", reply_markup=btn)    await message.answer(
         f"✅ <b>Buyurtmangiz qabul qilindi!</b>\n\n"
         f"⭐ <b>{stars_amount} Stars</b> — {price:,} so'm\n\n".replace(",", " ") +
         f"⏳ Admin chekni ko'rib chiqadi va Stars tez orada yuboriladi.\n"
         f"📞 Savollar bo'lsa: 🆘 Yordam tugmasini bosing. ",
         parse_mode="HTML", reply_markup=get_main_menu()
-    )    await state.clear()
+    )
+    await state.clear()
 
 @router.message(StarsOrderForm.receipt)
 async def get_stars_receipt_wrong(message: Message):
@@ -873,14 +782,14 @@ async def stars_reject_cb(call: CallbackQuery):
     if call.from_user.id != ADMIN_ID:
         await call.answer("Sizda ruxsat yo'q!", show_alert=True)
         return
-    parts = call.data.split("_")
-    user_id = int(parts[2])
+    parts = call.data.split("_")    user_id = int(parts[2])
     order_id = int(parts[3])
     data = await jb_read()
     orders = data.get("stars_orders", [])
     order = next((o for o in orders if o["id"] == order_id), None)
     if order:
-        order["status"] = "rejected"        data["stars_orders"] = orders
+        order["status"] = "rejected"
+        data["stars_orders"] = orders
         await jb_write(data)
 
     await bot.send_message(
@@ -896,7 +805,7 @@ async def stars_reject_cb(call: CallbackQuery):
         pass
     await call.answer("❌ Stars buyurtma bekor qilindi. ", show_alert=True)
 
-# ================== TELEGRAM PREMIUM ==================
+# ================== ⭐ TELEGRAM PREMIUM ==================
 @router.message(F.text == "⭐ TELEGRAM PREMIUM")
 async def premium_menu(message: Message, state: FSMContext):
     await state.clear()
@@ -922,13 +831,13 @@ async def premium_page_cb(call: CallbackQuery):
     try:
         await call.message.edit_reply_markup(reply_markup=get_premium_prices_keyboard_from_data(prices, page))
     except:
-        pass
-    await call.answer()
+        pass    await call.answer()
 
 @router.callback_query(F.data == "premium_back")
 async def premium_back_cb(call: CallbackQuery):
     await call.message.delete()
     await call.answer()
+
 @router.callback_query(F.data.startswith("buy_premium_"))
 async def buy_premium_cb(call: CallbackQuery, state: FSMContext):
     parts = call.data.split("_")
@@ -971,14 +880,14 @@ async def get_premium_username(message: Message, state: FSMContext):
 
 @router.message(PremiumOrderForm.receipt, F.photo)
 async def get_premium_receipt(message: Message, state: FSMContext):
-    st = await state.get_data()
-    receipt_id = message.photo[-1].file_id
+    st = await state.get_data()    receipt_id = message.photo[-1].file_id
     price = st['premium_price']
     duration = st['premium_duration']
     target_username = st.get('target_username', '—')
     now = get_time_tashkent()
     data = await jb_read()
-    order_id = get_next_id(data)    orders = data.get("premium_orders", [])
+    order_id = get_next_id(data)
+    orders = data.get("premium_orders", [])
     orders.append({
         "id": order_id,
         "user_id": message.from_user.id,
@@ -1020,74 +929,42 @@ async def get_premium_receipt(message: Message, state: FSMContext):
         f"💰 {price:,} so'm\n\n".replace(",", " ") +
         f"⏳ Admin chekni ko'rib chiqadi va Premium tez orada ulanadi.\n"
         f"📞 Savollar bo'lsa: 🆘 Yordam tugmasini bosing. ",
-        parse_mode="HTML", reply_markup=get_main_menu()
-    )
+        parse_mode="HTML", reply_markup=get_main_menu()    )
     await state.clear()
 
 @router.message(PremiumOrderForm.receipt)
 async def get_premium_receipt_wrong(message: Message):
     await message.answer("❗️ Iltimos, to'lov cheki rasmini yuboring!", parse_mode="HTML")
-# ================== ADMIN PREMIUM TASDIQLASH ==================
-@router.callback_query(F.data.startswith("premium_approve_"))
-async def premium_approve_cb(call: CallbackQuery):
-    if call.from_user.id != ADMIN_ID:
-        await call.answer("Sizda ruxsat yo'q!", show_alert=True)
-        return
-    parts = call.data.split("_")
-    user_id = int(parts[2])
-    order_id = int(parts[3])
+
+# ================== TO'LOV ==================
+@router.callback_query(F.data == "pay_ad")
+async def pay_ad_cb(call: CallbackQuery, state: FSMContext):
     data = await jb_read()
-    orders = data.get("premium_orders", [])
-    order = next((o for o in orders if o["id"] == order_id), None)
-    if order:
-        order["status"] = "approved"
-        data["premium_orders"] = orders
-        await jb_write(data)
-        await bot.send_message(
-            user_id,
-            f"🎉 <b>Tabriklaymiz! Telegram Premium ulandi!</b>\n\n"
-            f"⭐ <b>{order['duration']}</b> Premium obuna\n"
-            f"👤 Profil: <code>@{order['target_username']}</code>\n\n"
-            f"🙏 Xarid uchun rahmat! ",
-            parse_mode="HTML", reply_markup=get_main_menu()
-        )
-
-    caption = call.message.caption or ""
-    try:
-        await call.message.edit_caption(caption=caption + "\n\n✅ TASDIQLANDI — PREMIUM ULANDI", reply_markup=None)
-    except:
-        pass
-    await call.answer("✅ Premium buyurtma tasdiqlandi! ", show_alert=True)
-
-@router.callback_query(F.data.startswith("premium_reject_"))
-async def premium_reject_cb(call: CallbackQuery):
-    if call.from_user.id != ADMIN_ID:
-        await call.answer("Sizda ruxsat yo'q!", show_alert=True)
-        return
-    parts = call.data.split("_")
-    user_id = int(parts[2])
-    order_id = int(parts[3])
-    data = await jb_read()
-    orders = data.get("premium_orders", [])
-    order = next((o for o in orders if o["id"] == order_id), None)
-    if order:
-        order["status"] = "rejected"
-        data["premium_orders"] = orders
-        await jb_write(data)
-
-    await bot.send_message(
-        user_id,        "❌ <b>Buyurtmangiz bekor qilindi.</b>\n\n"
-        "🆘 Yordam orqali admin bilan bog'laning. ",
-        parse_mode="HTML", reply_markup=get_main_menu()
+    card = data.get("settings", {}).get("card", "")
+    price = data.get("settings", {}).get("price", "50000")
+    await call.message.edit_text(
+        f"💳 To'lov uchun karta raqam:\n\n`{card}`\nSumma: {price} so'm\n\n"
+        f"To'lov qilgach, chekni rasm (skrinshot) qilib yuboring. ",
+        parse_mode="Markdown"
     )
-    caption = call.message.caption or ""
-    try:
-        await call.message.edit_caption(caption=caption + "\n\n❌ BEKOR QILINDI", reply_markup=None)
-    except:
-        pass
-    await call.answer("❌ Premium buyurtma bekor qilindi. ", show_alert=True)
+    await state.set_state(PaymentForm.receipt)
 
-# ================== E'LON BERISH JARAYONI ==================
+@router.message(PaymentForm.receipt, F.photo)
+async def get_receipt(message: Message, state: FSMContext):
+    photo_id = message.photo[-1].file_id
+    btn = InlineKeyboardMarkup(inline_keyboard=[[
+        InlineKeyboardButton(text="✅ Tasdiqlash", callback_data=f"app_pay_{message.from_user.id}", style="success"),
+        InlineKeyboardButton(text="❌ Bekor qilish", callback_data=f"rej_pay_{message.from_user.id}", style="danger")
+    ]])
+    await bot.send_photo(ADMIN_ID, photo_id,
+        caption=f"💰 Yangi to'lov cheki.\n"
+        f"Foydalanuvchi: {message.from_user.full_name} (@{message.from_user.username})\n"
+        f"ID: {message.from_user.id} ",
+        reply_markup=btn)
+    await message.answer("Chek adminga yuborildi. Tasdiqlanishini kuting. ", reply_markup=get_main_menu())
+    await state.clear()
+
+# ================== E'LON BERISH ==================
 @router.message(AdForm.video, F.video)
 async def get_video(message: Message, state: FSMContext):
     await state.update_data(video=message.video.file_id)
@@ -1101,8 +978,7 @@ async def get_level(message: Message, state: FSMContext):
     await state.set_state(AdForm.guns)
 
 @router.message(AdForm.guns)
-async def get_guns(message: Message, state: FSMContext):
-    await state.update_data(guns=message.text)
+async def get_guns(message: Message, state: FSMContext):    await state.update_data(guns=message.text)
     await message.answer("Nechta X-suit bor? Kiriting:")
     await state.set_state(AdForm.xsuits)
 
@@ -1125,7 +1001,8 @@ async def get_cars(message: Message, state: FSMContext):
     await state.set_state(AdForm.price)
 
 @router.message(AdForm.price)
-async def get_price_ad(message: Message, state: FSMContext):    await state.update_data(price=message.text)
+async def get_price_ad(message: Message, state: FSMContext):
+    await state.update_data(price=message.text)
     await message.answer("Telefon raqamingizni kiriting (masalan: +998901234567):")
     await state.set_state(AdForm.phone)
 
@@ -1150,8 +1027,7 @@ async def get_phone(message: Message, state: FSMContext):
     ads.append({
         "id": ad_id,
         "user_id": message.from_user.id,
-        "video_id": st.get('video'),
-        "text": text,
+        "video_id": st.get('video'),        "text": text,
         "status": "pending"
     })
     data["ads"] = ads
@@ -1175,7 +1051,8 @@ async def get_phone(message: Message, state: FSMContext):
             reply_markup=btn, parse_mode="HTML")
     except:
         pass
-    await message.answer("✅ E'loningiz adminga yuborildi. Tasdiqlanishini kuting.", reply_markup=get_main_menu())
+
+    await message.answer("✅ E'loningiz adminga yuborildi. Tasdiqlanishini kuting. ", reply_markup=get_main_menu())
     await state.clear()
 
 # ================== SUPPORT ==================
@@ -1191,6 +1068,26 @@ async def get_support_msg(message: Message, state: FSMContext):
         reply_markup=btn)
     await message.answer("Xabaringiz adminga yetkazildi.", reply_markup=get_main_menu())
     await state.clear()
+
+# ================== ADMIN TO'LOV ==================
+@router.callback_query(F.data.startswith("app_pay_"))
+async def approve_pay(call: CallbackQuery):
+    user_id = int(call.data.split("_")[2])
+    data = await jb_read()
+    users = data.get("users", [])
+    for u in users:
+        if u["user_id"] == user_id:            u["paid_slots"] = u.get("paid_slots", 0) + 1
+            break
+    data["users"] = users
+    await jb_write(data)
+    await bot.send_message(user_id, "✅ To'lovingiz admin tomonidan tasdiqlandi!\nEndi yana e'lon joylashingiz mumkin. ", reply_markup=get_main_menu())
+    await call.message.edit_caption(caption=call.message.caption + "\n\n✅ TASDIQLANGAN")
+
+@router.callback_query(F.data.startswith("rej_pay_"))
+async def reject_pay(call: CallbackQuery):
+    user_id = int(call.data.split("_")[2])
+    await bot.send_message(user_id, "❌ To'lovingiz admin tomonidan bekor qilindi.", reply_markup=get_main_menu())
+    await call.message.edit_caption(caption=call.message.caption + "\n\n❌ BEKOR QILINGAN")
 
 # ================== ADMIN E'LON ==================
 @router.callback_query(F.data.startswith("app_ad_"))
@@ -1223,12 +1120,12 @@ async def approve_ad(call: CallbackQuery):
 
     ad["status"] = "approved"
     users = data.get("users", [])
-    for u in users:        if u["user_id"] == user_id:
+    for u in users:
+        if u["user_id"] == user_id:
             u["posted_ads"] = u.get("posted_ads", 0) + 1
             u["pending_approval"] = 0
             break
-    data["ads"] = ads
-    data["users"] = users
+    data["ads"] = ads    data["users"] = users
     await jb_write(data)
 
     try:
@@ -1272,12 +1169,12 @@ async def reject_ad(call: CallbackQuery):
 
     old_caption = call.message.caption or ""
     try:
-        await call.message.edit_caption(caption=old_caption + "\n\n❌ BEKOR QILINGAN", reply_markup=None)    except:
+        await call.message.edit_caption(caption=old_caption + "\n\n❌ BEKOR QILINGAN", reply_markup=None)
+    except:
         pass
     await call.answer("❌ E'lon bekor qilindi. ", show_alert=True)
 
-# ================== ADMIN JAVOB ==================
-@router.callback_query(F.data.startswith("reply_"))
+# ================== ADMIN JAVOB ==================@router.callback_query(F.data.startswith("reply_"))
 async def reply_support_cb(call: CallbackQuery, state: FSMContext):
     user_id = int(call.data.split("_")[1])
     await state.update_data(reply_to=user_id)
@@ -1321,12 +1218,12 @@ async def admin_panel(message: Message):
             InlineKeyboardButton(text="📦 Stars buyurtmalar", callback_data="admin_stars_orders", style="primary"),
         ],
         [InlineKeyboardButton(text="🗑 Stars narxlarini tozalash", callback_data="admin_clear_stars", style="danger")],
+
         [InlineKeyboardButton(text="━━━━━ 💜 PREMIUM SOZLAMALARI ━━━━━", callback_data="section_title")],
         [InlineKeyboardButton(text="➕ Premium narxi qo'shish", callback_data="admin_add_premium_price", style="success")],
         [
             InlineKeyboardButton(text="📋 Premium narxlari", callback_data="admin_premium_list", style="primary"),
-            InlineKeyboardButton(text="📦 Premium buyurtmalar", callback_data="admin_premium_orders", style="primary"),
-        ],
+            InlineKeyboardButton(text="📦 Premium buyurtmalar", callback_data="admin_premium_orders", style="primary"),        ],
         [InlineKeyboardButton(text="🗑 Premium narxlarini tozalash", callback_data="admin_clear_premium", style="danger")],
     ])
     await message.answer("⚙️ Admin panelga xush kelibsiz! ", reply_markup=btn)
@@ -1341,7 +1238,7 @@ async def admin_clear_uc_ask(call: CallbackQuery):
         InlineKeyboardButton(text="✅ Ha, o'chirish", callback_data="confirm_clear_uc", style="danger"),
         InlineKeyboardButton(text="❌ Yo'q", callback_data="back_to_admin", style="primary"),
     ]])
-    await call.message.answer("⚠️ Barcha UC narxlarini o'chirasizmi? \nBu amalni qaytarib bo'lmaydi! ", parse_mode="HTML", reply_markup=btn)
+    await call.message.answer("⚠️ Barcha UC narxlarini o'chirasizmi?\nBu amalni qaytarib bo'lmaydi! ", parse_mode="HTML", reply_markup=btn)
     await call.answer()
 
 @router.callback_query(F.data == "confirm_clear_uc")
@@ -1367,15 +1264,15 @@ async def admin_clear_stars_ask(call: CallbackQuery):
         InlineKeyboardButton(text="✅ Ha, o'chirish", callback_data="confirm_clear_stars", style="danger"),
         InlineKeyboardButton(text="❌ Yo'q", callback_data="back_to_admin", style="primary"),
     ]])
-    await call.message.answer("⚠️ Barcha Stars narxlarini o'chirasizmi? \nBu amalni qaytarib bo'lmaydi! ", parse_mode="HTML", reply_markup=btn)
+    await call.message.answer("⚠️ Barcha Stars narxlarini o'chirasizmi?\nBu amalni qaytarib bo'lmaydi! ", parse_mode="HTML", reply_markup=btn)
     await call.answer()
 
-@router.callback_query(F.data == "confirm_clear_stars")async def confirm_clear_stars(call: CallbackQuery):
+@router.callback_query(F.data == "confirm_clear_stars")
+async def confirm_clear_stars(call: CallbackQuery):
     if call.from_user.id != ADMIN_ID:
         await call.answer("Ruxsat yo'q!", show_alert=True)
         return
-    data = await jb_read()
-    data["stars_prices"] = []
+    data = await jb_read()    data["stars_prices"] = []
     await jb_write(data)
     await call.answer("✅ Barcha Stars narxlari o'chirildi!", show_alert=True)
     try:
@@ -1392,7 +1289,7 @@ async def admin_clear_premium_ask(call: CallbackQuery):
         InlineKeyboardButton(text="✅ Ha, o'chirish", callback_data="confirm_clear_premium", style="danger"),
         InlineKeyboardButton(text="❌ Yo'q", callback_data="back_to_admin", style="primary"),
     ]])
-    await call.message.answer("⚠️ Barcha Premium narxlarini o'chirasizmi? \nBu amalni qaytarib bo'lmaydi! ", parse_mode="HTML", reply_markup=btn)
+    await call.message.answer("⚠️ Barcha Premium narxlarini o'chirasizmi?\nBu amalni qaytarib bo'lmaydi! ", parse_mode="HTML", reply_markup=btn)
     await call.answer()
 
 @router.callback_query(F.data == "confirm_clear_premium")
@@ -1419,12 +1316,12 @@ async def add_uc_price_step1(call: CallbackQuery, state: FSMContext):
     await call.message.answer("💎 UC miqdorini kiriting\n\nMasalan: `60`", parse_mode="HTML")
     await state.set_state(AdminForm.uc_price_amount)
 
-@router.message(AdminForm.uc_price_amount)async def add_uc_price_step2(message: Message, state: FSMContext):
+@router.message(AdminForm.uc_price_amount)
+async def add_uc_price_step2(message: Message, state: FSMContext):
     if not message.text.isdigit():
         await message.answer("❗️ Faqat raqam kiriting!")
         return
-    await state.update_data(uc_amount=int(message.text))
-    await message.answer(f"💰 {message.text} UC narxini kiriting (so'mda)", parse_mode="HTML")
+    await state.update_data(uc_amount=int(message.text))    await message.answer(f"💰 {message.text} UC narxini kiriting (so'mda)", parse_mode="HTML")
     await state.set_state(AdminForm.uc_price_value)
 
 @router.message(AdminForm.uc_price_value)
@@ -1468,12 +1365,12 @@ async def admin_uc_list(call: CallbackQuery):
         ])
 
     rows.append([InlineKeyboardButton(text="🔙 Admin panel", callback_data="back_to_admin", style="primary")])
-    await call.message.answer(text, parse_mode="HTML", reply_markup=InlineKeyboardMarkup(inline_keyboard=rows))    await call.answer()
+    await call.message.answer(text, parse_mode="HTML", reply_markup=InlineKeyboardMarkup(inline_keyboard=rows))
+    await call.answer()
 
 @router.callback_query(F.data == "uc_info")
 async def uc_info_cb(call: CallbackQuery):
     await call.answer()
-
 @router.callback_query(F.data.startswith("del_uc_price_"))
 async def del_uc_price(call: CallbackQuery):
     pid = int(call.data.split("_")[3])
@@ -1493,7 +1390,7 @@ async def del_uc_price(call: CallbackQuery):
             except:
                 pass
             return
-        text = "💎 UC NARXLARI RO'YXATI: \n\nO'chirish uchun tugmani bosing 👇\n\n "
+        text = "💎 UC NARXLARI RO'YXATI:\n\nO'chirish uchun tugmani bosing 👇\n\n "
         rows = []
         for p in new_prices:
             text += f"• {p['uc_amount']} UC — {p['price']:,} so'm\n".replace(",", " ")
@@ -1517,12 +1414,12 @@ async def add_stars_price_step1(call: CallbackQuery, state: FSMContext):
 
 @router.message(AdminForm.stars_price_amount)
 async def add_stars_price_step2(message: Message, state: FSMContext):
-    if not message.text.isdigit():        await message.answer("❗️ Faqat raqam kiriting!")
+    if not message.text.isdigit():
+        await message.answer("❗️ Faqat raqam kiriting!")
         return
     await state.update_data(stars_amount=int(message.text))
     await message.answer(f"💰 {message.text} Stars narxini kiriting (so'mda)", parse_mode="HTML")
     await state.set_state(AdminForm.stars_price_value)
-
 @router.message(AdminForm.stars_price_value)
 async def add_stars_price_save(message: Message, state: FSMContext):
     if not message.text.isdigit():
@@ -1566,12 +1463,12 @@ async def admin_stars_list(call: CallbackQuery):
     rows.append([InlineKeyboardButton(text="🔙 Admin panel", callback_data="back_to_admin", style="primary")])
     await call.message.answer(text, parse_mode="HTML", reply_markup=InlineKeyboardMarkup(inline_keyboard=rows))
     await call.answer()
+
 @router.callback_query(F.data == "stars_info")
 async def stars_info_cb(call: CallbackQuery):
     await call.answer()
 
-@router.callback_query(F.data.startswith("del_stars_price_"))
-async def del_stars_price(call: CallbackQuery):
+@router.callback_query(F.data.startswith("del_stars_price_"))async def del_stars_price(call: CallbackQuery):
     pid = int(call.data.split("_")[3])
     data = await jb_read()
     prices = data.get("stars_prices", [])
@@ -1589,7 +1486,7 @@ async def del_stars_price(call: CallbackQuery):
             except:
                 pass
             return
-        text = "⭐ STARS NARXLARI RO'YXATI: \n\nO'chirish uchun tugmani bosing 👇\n\n "
+        text = "⭐ STARS NARXLARI RO'YXATI:\n\nO'chirish uchun tugmani bosing 👇\n\n "
         rows = []
         for p in new_prices:
             text += f"• {p['stars_amount']} Stars — {p['price']:,} so'm\n".replace(",", " ")
@@ -1616,11 +1513,11 @@ async def add_premium_price_step2(message: Message, state: FSMContext):
     await state.update_data(premium_duration=message.text)
     await message.answer(f"💰 «{message.text}» narxini kiriting (so'mda)", parse_mode="HTML")
     await state.set_state(AdminForm.premium_price_value)
+
 @router.message(AdminForm.premium_price_value)
 async def add_premium_price_save(message: Message, state: FSMContext):
     if not message.text.isdigit():
-        await message.answer("❗️ Faqat raqam kiriting!")
-        return
+        await message.answer("❗️ Faqat raqam kiriting!")        return
     st = await state.get_data()
     duration = st['premium_duration']
     price = int(message.text)
@@ -1664,12 +1561,12 @@ async def del_premium_price(call: CallbackQuery):
     pid = int(call.data.split("_")[3])
     data = await jb_read()
     prices = data.get("premium_prices", [])
-    item = next((p for p in prices if p["id"] == pid), None)    if item:
+    item = next((p for p in prices if p["id"] == pid), None)
+    if item:
         data["premium_prices"] = [p for p in prices if p["id"] != pid]
         await jb_write(data)
         await call.answer(f"✅ {item['duration']} narxi o'chirildi! ", show_alert=True)
-        new_prices = sorted(data["premium_prices"], key=lambda x: x.get("price", 0))
-        if not new_prices:
+        new_prices = sorted(data["premium_prices"], key=lambda x: x.get("price", 0))        if not new_prices:
             try:
                 await call.message.edit_text("❌ Barcha Premium narxlari o'chirildi. ", reply_markup=InlineKeyboardMarkup(inline_keyboard=[
                     [InlineKeyboardButton(text="🔙 Admin panel", callback_data="back_to_admin", style="primary")]
@@ -1677,7 +1574,7 @@ async def del_premium_price(call: CallbackQuery):
             except:
                 pass
             return
-        text = "💜 PREMIUM NARXLARI RO'YXATI: \n\nO'chirish uchun tugmani bosing 👇\n\n "
+        text = "💜 PREMIUM NARXLARI RO'YXATI:\n\nO'chirish uchun tugmani bosing 👇\n\n "
         rows = []
         for p in new_prices:
             text += f"• {p['duration']} — {p['price']:,} so'm\n".replace(",", " ")
@@ -1713,12 +1610,12 @@ async def admin_uc_orders(call: CallbackQuery):
 
 @router.callback_query(F.data == "admin_stars_orders")
 async def admin_stars_orders(call: CallbackQuery):
-    data = await jb_read()    orders = sorted(data.get("stars_orders", []), key=lambda x: x.get("id", 0), reverse=True)[:20]
+    data = await jb_read()
+    orders = sorted(data.get("stars_orders", []), key=lambda x: x.get("id", 0), reverse=True)[:20]
     if not orders:
         await call.message.answer("⭐ Hozircha Stars buyurtmalar yo'q. ")
         await call.answer()
         return
-
     text = "⭐ <b>OXIRGI 20 STARS BUYURTMA:</b>\n\n "
     for o in orders:
         emoji = "⏳ " if o["status"] == "pending" else ("✅ " if o["status"] == "approved" else "❌ ")
@@ -1762,12 +1659,12 @@ async def save_price(message: Message, state: FSMContext):
 async def set_card_step(call: CallbackQuery, state: FSMContext):
     await call.message.answer("Yangi karta raqamini kiriting:")
     await state.set_state(AdminForm.card)
+
 @router.message(AdminForm.card)
 async def save_card(message: Message, state: FSMContext):
     data = await jb_read()
     data["settings"]["card"] = message.text
-    await jb_write(data)
-    await message.answer("✅ Karta yangilandi!")
+    await jb_write(data)    await message.answer("✅ Karta yangilandi!")
     await state.clear()
 
 @router.callback_query(F.data == "admin_startmsg")
@@ -1811,12 +1708,12 @@ async def del_ch_step(call: CallbackQuery):
     data = await jb_read()
     channels = data.get("channels", [])
     if not channels:
-        await call.message.answer("Kanallar yo'q.")        return
+        await call.message.answer("Kanallar yo'q.")
+        return
     btn = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text=f"🗑 O'chirish: {ch['channel_id']}", callback_data=f"delch_{ch['id']}", style="danger")]
         for ch in channels
-    ])
-    await call.message.answer("Qaysi kanalni o'chirasiz?", reply_markup=btn)
+    ])    await call.message.answer("Qaysi kanalni o'chirasiz?", reply_markup=btn)
 
 @router.callback_query(F.data.startswith("delch_"))
 async def del_ch_action(call: CallbackQuery):
@@ -1860,12 +1757,12 @@ async def check_bot_status(message: Message):
         member = await bot.get_chat_member(MAIN_CHANNEL_ID, me.id)
         status = member.status
         can_post = getattr(member, 'can_post_messages', False)
-        ha = "✅ Ha "        yoq = "❌ Yo'q "
+        ha = "✅ Ha "
+        yoq = "❌ Yo'q "
         ok = "✅ Hammasi yaxshi! "
         xato = "❌ Botni kanalga ADMIN qilib qo'shish kerak! "
         await message.answer(
-            f"🤖 Bot: @{me.username}\n"
-            f"📢 Kanal: {MAIN_CHANNEL_ID}\n"
+            f"🤖 Bot: @{me.username}\n"            f"📢 Kanal: {MAIN_CHANNEL_ID}\n"
             f"👤 Status: {status}\n"
             f"✉️ Post yuborish huquqi: {ha if can_post else yoq}\n\n"
             f"{ok if can_post else xato} "
@@ -1878,13 +1775,8 @@ async def main():
     print("⏳ Jsonbin.io baza tekshirilmoqda...")
     await init_db()
     print("✅ Baza tayyor!")
-    
     dp.include_router(router)
-    
-    # Webhook serverini alohida vazifa sifatida ishga tushiramiz
-    asyncio.create_task(start_webhook_server())
-    
-    print("✅ Bot ishga tushdi (Polling + Webhook Server)...")
+    print("✅ Bot ishga tushdi...")
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
