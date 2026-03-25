@@ -1,2 +1,4 @@
-aiogram>=3.0.0
-aiohttp
+aiogram
+pillow
+pytz
+psycopg2-binary
