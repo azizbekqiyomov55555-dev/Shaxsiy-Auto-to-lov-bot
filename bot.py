@@ -1,31 +1,32 @@
 import logging
 import asyncio
 import aiohttp
-from aiogram import Bot, Dispatcher, types
+from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import Command
+from aiogram.fsm.context import FSMContext
+from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
 # --- KONFIGURATSIYA ---
 BOT_TOKEN = "8631309919:AAHmHJWlRqiXKBiMkrPIxvd1LyHrm6MPIvc"
-# Professional API da Kassa ID odatda tokenga bog'langan bo'ladi, 
-# lekin hujjatda ko'rsatilmagani uchun faqat tokendan foydalanamiz.
-API_KEY = "N2MxYjNkYmI4ZjdlYjVjMWYxZTM" 
+API_KEY = "N2MxYjNkYmI4ZjdlYjVjMWYxZTM"
 
 logging.basicConfig(level=logging.INFO)
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 
+# Holatlarni belgilash
+class PaymentStates(StatesGroup):
+    waiting_for_amount = State()
+
+# --- API FUNKSIYASI ---
 async def get_checkout_url(amount, description):
-    # Professional API hujjati bo'yicha URL
     url = "https://checkout.uz/api/v1/create_payment"
-    
     headers = {
         "Authorization": f"Bearer {API_KEY}",
         "Content-Type": "application/json",
         "Accept": "application/json"
     }
-    
-    # JSON hujjatidagi 'requestBody'ga asosan:
     payload = {
         "amount": int(amount),
         "description": description
@@ -37,47 +38,56 @@ async def get_checkout_url(amount, description):
                 result = await response.json()
                 logging.info(f"API JAVOBI: {result}")
                 
-                # Hujjat bo'yicha status "success" bo'lishi kerak
                 if response.status == 200 and result.get("status") == "success":
-                    # Link 'payment' obyekti ichidagi '_url' kalitida keladi
                     return result.get("payment", {}).get("_url")
-                else:
-                    logging.error(f"API XATOSI: {result}")
-                    return None
+                return None
         except Exception as e:
             logging.error(f"ULANISH XATOSI: {e}")
             return None
 
+# --- HANDLERLAR ---
+
 @dp.message(Command("start"))
-async def start_handler(message: types.Message):
-    amount = 11500  # Skrinshotingizdagi summa
-    # Buyurtma ID skrinshotingizdagidek chiqishi uchun description ga yozamiz
-    order_id = f"#{15000 + message.from_user.id % 1000}" 
-    description = f"Buyurtma {order_id}"
+async def cmd_start(message: types.Message, state: FSMContext):
+    await message.answer("Assalomu alaykum! To'lov qilish uchun miqdorni (so'mda) kiriting:\n\nMasalan: 15000")
+    # Foydalanuvchini summa kutish holatiga o'tkazamiz
+    await state.set_state(PaymentStates.waiting_for_amount)
+
+@dp.message(PaymentStates.waiting_for_amount)
+async def process_amount(message: types.Message, state: FSMContext):
+    # Kiritilgan matn raqam ekanligini tekshiramiz
+    if not message.text.isdigit():
+        await message.answer("Iltimos, faqat raqamlarda summa kiriting (masalan: 20000):")
+        return
+
+    amount = int(message.text)
     
+    # Minimal summa tekshiruvi (masalan 1000 so'm)
+    if amount < 1000:
+        await message.answer("Minimal to'lov miqdori 1,000 so'm. Qaytadan kiriting:")
+        return
+
     msg = await message.answer("⏳ To'lov havolasi yaratilmoqda...")
     
+    description = f"Foydalanuvchi ID: {message.from_user.id} to'lovi"
     pay_url = await get_checkout_url(amount, description)
-    
+
     if pay_url:
         keyboard = InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="💳 To'lov qilish", url=pay_url)]
         ])
         await msg.edit_text(
             f"💰 To'lov miqdori: {amount:,} so'm\n"
-            f"📝 Ta'rif: {description}\n\n"
-            f"To'lovni amalga oshirish uchun tugmani bosing:",
+            f"Tasdiqlash uchun pastdagi tugmani bosing:",
             reply_markup=keyboard
         )
+        # Holatni yakunlaymiz
+        await state.clear()
     else:
-        await msg.edit_text(
-            "❌ To'lov tizimida xatolik.\n"
-            "Sababi: API kalit noto'g'ri yoki kassa hali tasdiqlanmagan.\n"
-            "Loglarni tekshiring!"
-        )
+        await msg.edit_text("❌ To'lov tizimida xatolik yuz berdi. API kalit yoki kassa holatini tekshiring.")
+        await state.clear()
 
 async def main():
-    # Bot ishga tushganda eski xabarlarni o'qib yubormasligi uchun
     await bot.delete_webhook(drop_pending_updates=True)
     await dp.start_polling(bot)
 
