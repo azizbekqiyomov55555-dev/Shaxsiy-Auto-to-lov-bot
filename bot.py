@@ -1,23 +1,22 @@
 import logging
 import asyncio
 import aiohttp
-import os
 from aiogram import Bot, Dispatcher, types
 from aiogram.filters import Command
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
 # --- KONFIGURATSIYA ---
 BOT_TOKEN = "8631309919:AAHmHJWlRqiXKBiMkrPIxvd1LyHrm6MPIvc"
-KASSA_ID = 46
-SECRET_KEY = "N2MxYjNkYmI4ZjdlYjVjMWYxZTM"
+KASSA_ID = 46  # Dashboarddagi ID bilan bir xilligini tekshiring
+SECRET_KEY = "N2MxYjNkYmI4ZjdlYjVjMWYxZTM" # Bu yerga 'Secret Key' emas, 'API Key' qo'yib ko'ring
 
 logging.basicConfig(level=logging.INFO)
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 
 async def get_checkout_url(amount, order_id):
-    # Railway DNS muammosi bo'lmasligi uchun asosiy URL
-    url = "https://checkout.uz/api/v1/payment/create"
+    # API manzilini aniqlashtiring (kerak bo'lsa api.checkout.uz qilib ko'ring)
+    url = "https://api.checkout.uz/api/v1/payment/create"
     
     headers = {
         "Authorization": f"Bearer {SECRET_KEY}",
@@ -26,9 +25,9 @@ async def get_checkout_url(amount, order_id):
     }
     
     payload = {
-        "amount": int(amount),
+        "amount": int(amount), # Tiyn emas, so'mda bo'lsa int(11500)
         "order_id": str(order_id),
-        "kassa_id": KASSA_ID,
+        "kassa_id": int(KASSA_ID),
         "description": f"Buyurtma #{order_id}"
     }
 
@@ -36,14 +35,14 @@ async def get_checkout_url(amount, order_id):
         try:
             async with session.post(url, json=payload, headers=headers, timeout=15) as response:
                 result = await response.json()
-                # Logda aniq nima bo'layotganini ko'ramiz
-                logging.info(f"API JAVOBI: {result}")
+                logging.info(f"API JAVOBI: {result}") # Terminalda bu qatorni kuzating!
                 
                 if response.status == 200 and result.get("status") == True:
                     return result.get("payment_url")
                 else:
-                    # Agar kassa nofaol bo'lsa, xatoni terminalda yozadi
-                    logging.error(f"XATO: {result.get('message', 'Nomaʼlum xato')}")
+                    # Xato sababini aniqroq ko'rsatish uchun
+                    error_msg = result.get('message', 'Nomaʼlum xato')
+                    logging.error(f"CHECKOUT XATOSI: {error_msg}")
                     return None
         except Exception as e:
             logging.error(f"ULANISH XATOSI: {e}")
@@ -51,7 +50,7 @@ async def get_checkout_url(amount, order_id):
 
 @dp.message(Command("start"))
 async def start_handler(message: types.Message):
-    amount = 11500
+    amount = 11500 # So'm miqdori
     order_id = f"ID_{message.from_user.id}_{int(asyncio.get_event_loop().time())}"
     
     msg = await message.answer("⏳ To'lov havolasi yaratilmoqda...")
@@ -62,10 +61,10 @@ async def start_handler(message: types.Message):
         keyboard = InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="💳 To'lov qilish", url=pay_url)]
         ])
-        await msg.edit_text("To'lov qilish uchun pastdagi tugmani bosing:", reply_markup=keyboard)
+        await msg.edit_text(f"Hisobingiz: {amount} so'm.\nTo'lov qilish uchun pastdagi tugmani bosing:", reply_markup=keyboard)
     else:
-        # Kassa hali faollashmagan bo'lsa shu xabar chiqadi
-        await msg.edit_text("❌ To'lov tizimi hozircha nofaol. Kassa tasdiqlanishini kutyapmiz.")
+        # Terminalda chiqqan logga qarab bu xabarni o'zgartirishingiz mumkin
+        await msg.edit_text("❌ To'lov tizimida xatolik yuz berdi. Iltimos, keyinroq urunib ko'ring yoki administratorga murojaat qiling.")
 
 async def main():
     await dp.start_polling(bot)
