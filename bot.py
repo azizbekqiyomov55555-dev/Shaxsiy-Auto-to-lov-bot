@@ -22,10 +22,11 @@ BOT_TOKEN = "8766647589:AAHmY6x59GgKA25K3e737-7jomufi9wRv2Y"
 ADMIN_ID = 8332077004
 MAIN_CHANNEL_ID = "@Azizbekl2026"
 
-# CHECKOUT.UZ SOZLAMALARI
+# CHECKOUT.UZ SOZLAMALARI (to'g'ri endpointlar)
 CHECKOUT_API_KEY = "N2MxYjNkYmI4ZjdlYjVjMWYxZTM"
 CHECKOUT_MERCHANT_ID = "46"
 CHECKOUT_BASE_URL = "https://checkout.uz/api/v1"
+# Webhook manzili (agar sizda sozlangan bo'lsa)
 WEBHOOK_URL = "https://shaxsiy-auto-to-lov-bot-production.up.railway.app/webhook"
 
 # ================== JSONBIN.IO SOZLAMALARI ==================
@@ -159,114 +160,59 @@ def get_main_menu():
     )
     return kb
 
-# ================== CHECKOUT.UZ FUNKSIYALAR ==================
-async def create_checkout_payment(amount: int, description: str, order_id: int, user_id: int) -> str:
-    """Create payment link via checkout.uz and return payment URL."""
-    url = f"{CHECKOUT_BASE_URL}/payment"
+# ================== CHECKOUT.UZ FUNKSIYALAR (to'g'ri endpointlar) ==================
+async def create_checkout_payment(amount: int, description: str, order_id: int, user_id: int):
+    """
+    Create payment invoice via checkout.uz.
+    Returns tuple: (payment_url, payment_uuid) or (None, None) on error.
+    """
+    url = f"{CHECKOUT_BASE_URL}/create_payment"
     headers = {
         "Authorization": f"Bearer {CHECKOUT_API_KEY}",
         "Content-Type": "application/json"
     }
     payload = {
-        "merchant_id": CHECKOUT_MERCHANT_ID,
         "amount": amount,
-        "description": description,
-        "callback_url": WEBHOOK_URL,
-        "metadata": {
-            "order_id": order_id,
-            "user_id": user_id,
-            "type": description.split()[0]  # e.g., "UC", "Stars", "Premium", "Ad"
-        }
+        "description": f"{description} (buyurtma #{order_id})"
     }
     async with aiohttp.ClientSession() as session:
         async with session.post(url, json=payload, headers=headers) as resp:
-            if resp.status == 201:
+            if resp.status == 200:
                 data = await resp.json()
-                return data.get("payment_url")
+                if data.get("status") == "success":
+                    payment = data.get("payment", {})
+                    uuid = payment.get("_uuid")
+                    url = payment.get("_url")
+                    return url, uuid
+                else:
+                    logging.error(f"Checkout.uz error: {data}")
+                    return None, None
             else:
                 error = await resp.text()
-                logging.error(f"Checkout.uz error: {error}")
-                return None
+                logging.error(f"Checkout.uz HTTP {resp.status}: {error}")
+                return None, None
 
-async def verify_checkout_signature(payload: bytes, signature: str) -> bool:
-    secret = CHECKOUT_API_KEY.encode()
-    computed = hmac.new(secret, payload, hashlib.sha256).hexdigest()
-    return hmac.compare_digest(computed, signature)
+async def check_payment_status(uuid: str):
+    """Check payment status via checkout.uz."""
+    url = f"{CHECKOUT_BASE_URL}/status_payment"
+    headers = {
+        "Authorization": f"Bearer {CHECKOUT_API_KEY}",
+        "Content-Type": "application/json"
+    }
+    payload = {"uuid": uuid}
+    async with aiohttp.ClientSession() as session:
+        async with session.post(url, json=payload, headers=headers) as resp:
+            if resp.status == 200:
+                data = await resp.json()
+                if data.get("status") == "success":
+                    return data.get("data", {}).get("status")  # "paid" or "pending" etc.
+            return None
 
-# ================== WEBHOOK HANDLER ==================
+# ================== WEBHOOK HANDLER (agar kerak bo'lsa) ==================
 async def webhook_handler(request: web.Request):
-    signature = request.headers.get("X-Signature", "")
-    body = await request.read()
-    if not await verify_checkout_signature(body, signature):
-        return web.Response(status=400, text="Invalid signature")
-
-    data = await request.json()
-    payment_id = data.get("payment_id")
-    status = data.get("status")
-    metadata = data.get("metadata", {})
-    order_id = metadata.get("order_id")
-    user_id = metadata.get("user_id")
-    payment_type = metadata.get("type")
-
-    if status == "completed":
-        db = await jb_read()
-        payment_orders = db.get("payment_orders", [])
-        for po in payment_orders:
-            if po["payment_id"] == payment_id:
-                po["status"] = "paid"
-                break
-        else:
-            payment_orders.append({
-                "payment_id": payment_id,
-                "order_id": order_id,
-                "user_id": user_id,
-                "type": payment_type,
-                "status": "paid",
-                "paid_at": get_time_tashkent()
-            })
-        db["payment_orders"] = payment_orders
-
-        if payment_type == "Ad":
-            users = db.get("users", [])
-            for u in users:
-                if u["user_id"] == user_id:
-                    u["paid_slots"] = u.get("paid_slots", 0) + 1
-                    break
-            db["users"] = users
-            await bot.send_message(user_id, "✅ To'lovingiz qabul qilindi! Endi e'lon berishingiz mumkin.", reply_markup=get_main_menu())
-
-        elif payment_type == "UC":
-            uc_orders = db.get("uc_orders", [])
-            for o in uc_orders:
-                if o["id"] == order_id:
-                    o["status"] = "paid"
-                    break
-            db["uc_orders"] = uc_orders
-            await bot.send_message(ADMIN_ID, f"💎 UC buyurtma #{order_id} to'landi!\nFoydalanuvchi: {user_id}\nTo'lovni tekshirib UC yuboring.")
-
-        elif payment_type == "Stars":
-            stars_orders = db.get("stars_orders", [])
-            for o in stars_orders:
-                if o["id"] == order_id:
-                    o["status"] = "paid"
-                    break
-            db["stars_orders"] = stars_orders
-            await bot.send_message(ADMIN_ID, f"⭐ Stars buyurtma #{order_id} to'landi!\nFoydalanuvchi: {user_id}\nTo'lovni tekshirib Stars yuboring.")
-
-        elif payment_type == "Premium":
-            premium_orders = db.get("premium_orders", [])
-            for o in premium_orders:
-                if o["id"] == order_id:
-                    o["status"] = "paid"
-                    break
-            db["premium_orders"] = premium_orders
-            await bot.send_message(ADMIN_ID, f"⭐ Premium buyurtma #{order_id} to'landi!\nFoydalanuvchi: {user_id}\nTo'lovni tekshirib Premium ulang.")
-
-        await jb_write(db)
-        return web.Response(status=200, text="OK")
-    else:
-        # Payment failed (ignored)
-        return web.Response(status=200, text="OK")
+    # Agar checkout.uz webhook sozlagan bo'lsangiz, bu yerda ishlov berishingiz mumkin.
+    # Hozircha oddiy qaytarish.
+    return web.Response(status=200, text="OK")
 
 # ================== START VA OBUNA ==================
 @router.message(CommandStart())
@@ -348,8 +294,12 @@ async def menu_ad_cb(message: Message, state: FSMContext):
         data["payment_orders"].append(payment_order)
         await jb_write(data)
 
-        payment_url = await create_checkout_payment(price, f"Ad {order_id}", order_id, message.from_user.id)
+        payment_url, payment_uuid = await create_checkout_payment(price, f"Ad {order_id}", order_id, message.from_user.id)
         if payment_url:
+            # Save uuid for later status check
+            payment_order["uuid"] = payment_uuid
+            await jb_write(data)
+
             btn = InlineKeyboardMarkup(inline_keyboard=[
                 [InlineKeyboardButton(text="💳 To'lov qilish", url=payment_url, style="primary")],
                 [InlineKeyboardButton(text="🔄 Tekshirish", callback_data=f"check_payment_{order_id}", style="secondary")]
@@ -464,8 +414,12 @@ async def get_pubg_id(message: Message, state: FSMContext):
     data["payment_orders"].append(payment_order)
     await jb_write(data)
 
-    payment_url = await create_checkout_payment(price, f"UC {order_id}", order_id, message.from_user.id)
+    payment_url, payment_uuid = await create_checkout_payment(price, f"UC {order_id}", order_id, message.from_user.id)
     if payment_url:
+        # Save uuid
+        payment_order["uuid"] = payment_uuid
+        await jb_write(data)
+
         btn = InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="💳 To'lov qilish", url=payment_url, style="primary")],
             [InlineKeyboardButton(text="🔄 Tekshirish", callback_data=f"check_payment_{order_id}", style="secondary")]
@@ -594,8 +548,11 @@ async def ask_stars_payment(event, state: FSMContext):
     data["payment_orders"].append(payment_order)
     await jb_write(data)
 
-    payment_url = await create_checkout_payment(price, f"Stars {order_id}", order_id, event.from_user.id)
+    payment_url, payment_uuid = await create_checkout_payment(price, f"Stars {order_id}", order_id, event.from_user.id)
     if payment_url:
+        payment_order["uuid"] = payment_uuid
+        await jb_write(data)
+
         btn = InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="💳 To'lov qilish", url=payment_url, style="primary")],
             [InlineKeyboardButton(text="🔄 Tekshirish", callback_data=f"check_payment_{order_id}", style="secondary")]
@@ -706,8 +663,11 @@ async def get_premium_username(message: Message, state: FSMContext):
     data["payment_orders"].append(payment_order)
     await jb_write(data)
 
-    payment_url = await create_checkout_payment(price, f"Premium {order_id}", order_id, message.from_user.id)
+    payment_url, payment_uuid = await create_checkout_payment(price, f"Premium {order_id}", order_id, message.from_user.id)
     if payment_url:
+        payment_order["uuid"] = payment_uuid
+        await jb_write(data)
+
         btn = InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="💳 To'lov qilish", url=payment_url, style="primary")],
             [InlineKeyboardButton(text="🔄 Tekshirish", callback_data=f"check_payment_{order_id}", style="secondary")]
@@ -729,11 +689,69 @@ async def check_payment_cb(call: CallbackQuery):
     data = await jb_read()
     payment_orders = data.get("payment_orders", [])
     payment = next((p for p in payment_orders if p["order_id"] == order_id), None)
-    if payment and payment["status"] == "paid":
-        await call.answer("✅ To'lov tasdiqlangan!", show_alert=True)
+    if not payment:
+        await call.answer("❌ To'lov ma'lumoti topilmadi!", show_alert=True)
+        return
+
+    if payment["status"] == "paid":
+        await call.answer("✅ To'lov allaqachon tasdiqlangan!", show_alert=True)
         await call.message.delete()
+        return
+
+    # Check status with checkout.uz
+    uuid = payment.get("uuid")
+    if uuid:
+        status = await check_payment_status(uuid)
+        if status == "paid":
+            # Update payment order
+            payment["status"] = "paid"
+            await jb_write(data)
+
+            # Process the order type
+            payment_type = payment["type"]
+            if payment_type == "Ad":
+                users = data.get("users", [])
+                for u in users:
+                    if u["user_id"] == payment["user_id"]:
+                        u["paid_slots"] = u.get("paid_slots", 0) + 1
+                        break
+                data["users"] = users
+                await bot.send_message(payment["user_id"], "✅ To'lovingiz qabul qilindi! Endi e'lon berishingiz mumkin.", reply_markup=get_main_menu())
+
+            elif payment_type == "UC":
+                uc_orders = data.get("uc_orders", [])
+                for o in uc_orders:
+                    if o["id"] == order_id:
+                        o["status"] = "paid"
+                        break
+                data["uc_orders"] = uc_orders
+                await bot.send_message(ADMIN_ID, f"💎 UC buyurtma #{order_id} to'landi!\nFoydalanuvchi: {payment['user_id']}\nTo'lovni tekshirib UC yuboring.")
+
+            elif payment_type == "Stars":
+                stars_orders = data.get("stars_orders", [])
+                for o in stars_orders:
+                    if o["id"] == order_id:
+                        o["status"] = "paid"
+                        break
+                data["stars_orders"] = stars_orders
+                await bot.send_message(ADMIN_ID, f"⭐ Stars buyurtma #{order_id} to'landi!\nFoydalanuvchi: {payment['user_id']}\nTo'lovni tekshirib Stars yuboring.")
+
+            elif payment_type == "Premium":
+                premium_orders = data.get("premium_orders", [])
+                for o in premium_orders:
+                    if o["id"] == order_id:
+                        o["status"] = "paid"
+                        break
+                data["premium_orders"] = premium_orders
+                await bot.send_message(ADMIN_ID, f"⭐ Premium buyurtma #{order_id} to'landi!\nFoydalanuvchi: {payment['user_id']}\nTo'lovni tekshirib Premium ulang.")
+
+            await jb_write(data)
+            await call.answer("✅ To'lov tasdiqlandi!", show_alert=True)
+            await call.message.delete()
+        else:
+            await call.answer("⏳ To'lov hali tasdiqlanmagan. Iltimos, birozdan keyin tekshiring.", show_alert=True)
     else:
-        await call.answer("⏳ To'lov hali tasdiqlanmagan. Iltimos, birozdan keyin tekshiring.", show_alert=True)
+        await call.answer("❌ To'lov ma'lumoti to'liq emas.", show_alert=True)
 
 # ================== E'LON BERISH (AD FORM) ==================
 @router.message(AdForm.video, F.video)
@@ -861,8 +879,15 @@ async def admin_panel(message: Message):
          InlineKeyboardButton(text="📋 Premium narxlari", callback_data="admin_premium_list", style="primary")],
         [InlineKeyboardButton(text="📦 Premium buyurtmalar", callback_data="admin_premium_orders", style="primary"),
          InlineKeyboardButton(text="🗑 Premium narxlarini tozalash", callback_data="admin_clear_premium", style="danger")],
+        [InlineKeyboardButton(text="🔙 Asosiy menyu", callback_data="back_to_main_menu", style="secondary")]
     ])
     await message.answer("⚙️ Admin panel", reply_markup=btn)
+
+@router.callback_query(F.data == "back_to_main_menu")
+async def back_to_main_menu(call: CallbackQuery):
+    await call.message.answer("Asosiy menyu:", reply_markup=get_main_menu())
+    await call.message.delete()
+    await call.answer()
 
 # ================== ADMIN STATISTIKA ==================
 @router.callback_query(F.data == "admin_stats")
@@ -1394,7 +1419,7 @@ async def main():
     dp.include_router(router)
     print("✅ Bot ishga tushdi...")
 
-    # Webhook server
+    # Webhook server (agar kerak bo'lsa)
     app = web.Application()
     app.router.add_post('/webhook', webhook_handler)
     runner = web.AppRunner(app)
