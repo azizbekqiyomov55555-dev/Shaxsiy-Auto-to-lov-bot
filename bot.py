@@ -7,6 +7,7 @@ import hmac
 import json
 import os
 from datetime import datetime
+from typing import Optional
 import pytz
 
 from aiogram import Bot, Dispatcher, F, Router
@@ -262,6 +263,90 @@ async def check_subscription(user_id):
     return unsubbed
 
 
+# ================== RANGLI TUGMA YARATISH ==================
+def colored_button(text: str, color: Optional[int] = None) -> KeyboardButton:
+    """
+    Rangli KeyboardButton yaratish.
+    Telegram Bot API 9.0+ da color parametri qo'llab-quvvatlanadi.
+    
+    Ranglar:
+    - 0xe96060 (qizil/red)    = 15294560
+    - 0x60b5e9 (ko'k/blue)    = 6338025
+    - 0x60e960 (yashil/green)  = 6351200
+    
+    Agar aiogram versiyasi color ni qo'llab-quvvatlamasa,
+    raw API orqali yuboramiz.
+    """
+    btn = KeyboardButton(text=text)
+    if color is not None:
+        # Aiogram 3.x da KeyboardButton.model_fields ga color qo'shilgan bo'lishi kerak
+        # Agar yo'q bo'lsa, biz raw dict orqali qo'shamiz
+        try:
+            btn.color = color
+        except (AttributeError, ValueError):
+            pass
+    return btn
+
+
+# Rang konstantalari (Telegram Bot API format)
+COLOR_RED = 0xe96060      # 15294560 - Qizil
+COLOR_BLUE = 0x60b5e9     # 6338025 - Ko'k
+COLOR_GREEN = 0x60e960    # 6351200 - Yashil
+
+
+def build_colored_keyboard(buttons_data: list, **kwargs) -> dict:
+    """
+    Rangli ReplyKeyboardMarkup ni raw dict sifatida yaratish.
+    buttons_data = [
+        [{"text": "...", "color": 0x60b5e9}, {"text": "...", "color": 0xe96060}],
+        ...
+    ]
+    """
+    keyboard = []
+    for row_data in buttons_data:
+        row = []
+        for btn_data in row_data:
+            btn = {"text": btn_data["text"]}
+            if "color" in btn_data and btn_data["color"] is not None:
+                btn["color"] = btn_data["color"]
+            row.append(btn)
+        keyboard.append(row)
+
+    result = {
+        "keyboard": keyboard,
+        "resize_keyboard": kwargs.get("resize_keyboard", True),
+        "is_persistent": kwargs.get("is_persistent", True),
+    }
+    if "input_field_placeholder" in kwargs:
+        result["input_field_placeholder"] = kwargs["input_field_placeholder"]
+    return result
+
+
+async def send_with_colored_keyboard(
+    chat_id: int,
+    text: str,
+    keyboard_data: dict,
+    parse_mode: str = "HTML"
+):
+    """
+    Raw API orqali rangli keyboard bilan xabar yuborish.
+    """
+    import json as _json
+    url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
+    payload = {
+        "chat_id": chat_id,
+        "text": text,
+        "parse_mode": parse_mode,
+        "reply_markup": _json.dumps(keyboard_data),
+    }
+    async with aiohttp.ClientSession() as session:
+        async with session.post(url, json=payload) as resp:
+            result = await resp.json()
+            if not result.get("ok"):
+                logging.error(f"sendMessage xato: {result}")
+            return result
+
+
 # ================== CHECKOUT.UZ FUNKSIYALAR ==================
 async def create_checkout_payment(amount: int, description: str) -> dict:
     headers = {
@@ -337,7 +422,6 @@ async def payment_monitor():
                 logging.info(f"Tekshiruv payment_id={payment_id}: {result}")
 
                 if result.get("status") == "success" and result.get("data", {}).get("status") == "paid":
-                    # To'lov tasdiqlandi!
                     db_execute("UPDATE pending_payments SET status='approved' WHERE id=?", (p_id,))
 
                     now = get_time_tashkent()
@@ -347,21 +431,20 @@ async def payment_monitor():
                     except:
                         order_data = {}
 
-                    # ===== E'LON TO'LOVI =====
                     if pay_type == "ad":
                         db_execute("UPDATE users SET paid_slots = paid_slots + 1 WHERE user_id=?", (user_id,))
                         try:
-                            await bot.send_message(
+                            main_kb = get_main_menu_colored()
+                            await send_with_colored_keyboard(
                                 user_id,
                                 "✅ <b>To'lovingiz avtomatik tasdiqlandi!</b>\n\n"
                                 "Endi e'lon berishingiz mumkin.\n"
                                 "👇 «📝 E'lon berish» tugmasini bosing.",
-                                parse_mode="HTML", reply_markup=get_main_menu()
+                                main_kb
                             )
                         except Exception as e:
                             logging.error(f"Xabar xato: {e}")
 
-                    # ===== UC TO'LOVI =====
                     elif pay_type == "uc":
                         uc_amount = order_data.get("uc_amount", 0)
                         pubg_id = order_data.get("pubg_id", "—")
@@ -391,17 +474,17 @@ async def payment_monitor():
                         except:
                             pass
                         try:
-                            await bot.send_message(
+                            main_kb = get_main_menu_colored()
+                            await send_with_colored_keyboard(
                                 user_id,
                                 f"✅ <b>To'lovingiz avtomatik tasdiqlandi!</b>\n\n"
                                 f"💎 <b>{uc_amount} UC</b> tez orada profilingizga yuboriladi.\n"
                                 f"🎮 PUBG ID: <code>{pubg_id}</code>\n\n⏳ Admin UC ni yuborishini kuting.",
-                                parse_mode="HTML", reply_markup=get_main_menu()
+                                main_kb
                             )
                         except Exception as e:
                             logging.error(f"UC xabar xato: {e}")
 
-                    # ===== STARS TO'LOVI =====
                     elif pay_type == "stars":
                         stars_amount = order_data.get("stars_amount", 0)
                         stars_price = order_data.get("price", amount)
@@ -433,17 +516,17 @@ async def payment_monitor():
                         except:
                             pass
                         try:
-                            await bot.send_message(
+                            main_kb = get_main_menu_colored()
+                            await send_with_colored_keyboard(
                                 user_id,
                                 f"✅ <b>To'lovingiz avtomatik tasdiqlandi!</b>\n\n"
                                 f"⭐ <b>{stars_amount} Stars</b> tez orada yuboriladi.\n"
                                 f"🎯 Kimga: {target_text}\n\n⏳ Admin Stars ni yuborishini kuting.",
-                                parse_mode="HTML", reply_markup=get_main_menu()
+                                main_kb
                             )
                         except Exception as e:
                             logging.error(f"Stars xabar xato: {e}")
 
-                    # ===== PREMIUM TO'LOVI =====
                     elif pay_type == "premium":
                         duration = order_data.get("duration", "")
                         prem_price = order_data.get("price", amount)
@@ -473,12 +556,13 @@ async def payment_monitor():
                         except:
                             pass
                         try:
-                            await bot.send_message(
+                            main_kb = get_main_menu_colored()
+                            await send_with_colored_keyboard(
                                 user_id,
                                 f"✅ <b>To'lovingiz avtomatik tasdiqlandi!</b>\n\n"
                                 f"💜 <b>{duration}</b> Telegram Premium tez orada ulanadi.\n"
                                 f"👤 Profil: <code>@{target_username}</code>\n\n⏳ Admin Premium ni ulashini kuting.",
-                                parse_mode="HTML", reply_markup=get_main_menu()
+                                main_kb
                             )
                         except Exception as e:
                             logging.error(f"Premium xabar xato: {e}")
@@ -514,7 +598,6 @@ async def send_auto_payment_link(
         p_url = payment.get("_url", "")
 
         if p_id and p_url:
-            # Bazaga yozish
             order_data_str = json.dumps(order_data, ensure_ascii=False)
             db_execute(
                 "INSERT INTO pending_payments (payment_id, user_id, full_name, username, amount, type, status, created_at, order_data) VALUES (?,?,?,?,?,?,?,?,?)",
@@ -541,7 +624,6 @@ async def send_auto_payment_link(
                 await call_or_msg.answer(text, reply_markup=btn, parse_mode="HTML")
             return True
 
-    # Checkout ishlamasa manual fallback
     card = get_setting("card", "")
     btn = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="🔴 📸 Chek yuborish", callback_data=fallback_cb)],
@@ -570,8 +652,36 @@ def get_payment_choice_keyboard(auto_cb: str, manual_cb: str) -> InlineKeyboardM
     ])
 
 
-# ================== ASOSIY MENU ==================
+# ================== RANGLI ASOSIY MENU ==================
+def get_main_menu_colored() -> dict:
+    """
+    Rangli ReplyKeyboardMarkup - raw dict formatida.
+    Ko'k = 0x60b5e9, Qizil = 0xe96060, Yashil = 0x60e960
+    """
+    return build_colored_keyboard(
+        [
+            [
+                {"text": "📝 E'lon berish", "color": COLOR_BLUE},
+                {"text": "🆘 Yordam", "color": COLOR_RED}
+            ],
+            [
+                {"text": "🎮 PUBG MOBILE UC OLISH 💎", "color": COLOR_GREEN}
+            ],
+            [
+                {"text": "⭐ TELEGRAM PREMIUM", "color": COLOR_BLUE},
+                {"text": "🌟 STARS OLISH", "color": COLOR_GREEN}
+            ],
+        ],
+        resize_keyboard=True,
+        is_persistent=True,
+        input_field_placeholder="Quyidagi tugmalardan birini tanlang 👇"
+    )
+
+
 def get_main_menu():
+    """
+    Oddiy ReplyKeyboardMarkup (fallback uchun).
+    """
     return ReplyKeyboardMarkup(
         keyboard=[
             [KeyboardButton(text="📝 E'lon berish"), KeyboardButton(text="🆘 Yordam")],
@@ -582,6 +692,29 @@ def get_main_menu():
         is_persistent=True,
         input_field_placeholder="Quyidagi tugmalardan birini tanlang 👇"
     )
+
+
+# ================== RANGLI XABAR YUBORISH HELPER ==================
+async def reply_with_colored_menu(message_or_id, text: str, parse_mode: str = "HTML"):
+    """
+    Rangli asosiy menyu bilan xabar yuborish.
+    message_or_id - Message obyekti yoki chat_id (int).
+    """
+    if isinstance(message_or_id, int):
+        chat_id = message_or_id
+    else:
+        chat_id = message_or_id.chat.id
+
+    kb = get_main_menu_colored()
+    result = await send_with_colored_keyboard(chat_id, text, kb, parse_mode)
+
+    # Agar raw API ishlamasa, oddiy usulda yuboramiz
+    if not result.get("ok"):
+        logging.warning(f"Rangli keyboard ishlamadi, oddiy keyboard ishlatilmoqda: {result}")
+        if isinstance(message_or_id, int):
+            await bot.send_message(chat_id, text, parse_mode=parse_mode, reply_markup=get_main_menu())
+        else:
+            await message_or_id.answer(text, parse_mode=parse_mode, reply_markup=get_main_menu())
 
 
 # ================== ADMIN MENYU ==================
@@ -659,7 +792,7 @@ def get_uc_prices_keyboard(page=0):
     rows = []
     for item in current:
         rows.append([InlineKeyboardButton(
-            text=f"🟡 💎 {item['uc_amount']} UC — {item['price']:,} so'm".replace(",", " "),
+            text=f"💎 {item['uc_amount']} UC — {item['price']:,} so'm".replace(",", " "),
             callback_data=f"buy_uc_x_{item['uc_amount']}_{item['price']}"
         )])
     nav_row = []
@@ -669,7 +802,7 @@ def get_uc_prices_keyboard(page=0):
         nav_row.append(InlineKeyboardButton(text="Keyingi ➡️", callback_data=f"uc_page_{page + 1}"))
     if nav_row:
         rows.append(nav_row)
-    rows.append([InlineKeyboardButton(text="🔴 🔙 Orqaga", callback_data="uc_back")])
+    rows.append([InlineKeyboardButton(text="🔙 Orqaga", callback_data="uc_back")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
@@ -686,7 +819,7 @@ def get_stars_prices_keyboard(page=0):
     rows = []
     for item in current:
         rows.append([InlineKeyboardButton(
-            text=f"🟡 ⭐ {item['stars_amount']} Stars — {item['price']:,} so'm".replace(",", " "),
+            text=f"⭐ {item['stars_amount']} Stars — {item['price']:,} so'm".replace(",", " "),
             callback_data=f"buy_stars_{item['id']}_{item['stars_amount']}_{item['price']}"
         )])
     nav_row = []
@@ -696,7 +829,7 @@ def get_stars_prices_keyboard(page=0):
         nav_row.append(InlineKeyboardButton(text="Keyingi ➡️", callback_data=f"stars_page_{page + 1}"))
     if nav_row:
         rows.append(nav_row)
-    rows.append([InlineKeyboardButton(text="🔴 🔙 Orqaga", callback_data="stars_back")])
+    rows.append([InlineKeyboardButton(text="🔙 Orqaga", callback_data="stars_back")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
@@ -713,7 +846,7 @@ def get_premium_prices_keyboard(page=0):
     rows = []
     for item in current:
         rows.append([InlineKeyboardButton(
-            text=f"🟡 💜 {item['duration']} — {item['price']:,} so'm".replace(",", " "),
+            text=f"💜 {item['duration']} — {item['price']:,} so'm".replace(",", " "),
             callback_data=f"buy_premium_{item['id']}_{item['price']}"
         )])
     nav_row = []
@@ -723,7 +856,7 @@ def get_premium_prices_keyboard(page=0):
         nav_row.append(InlineKeyboardButton(text="Keyingi ➡️", callback_data=f"premium_page_{page + 1}"))
     if nav_row:
         rows.append(nav_row)
-    rows.append([InlineKeyboardButton(text="🔴 🔙 Orqaga", callback_data="premium_back")])
+    rows.append([InlineKeyboardButton(text="🔙 Orqaga", callback_data="premium_back")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
@@ -741,14 +874,14 @@ async def start_cmd(message: Message, state: FSMContext):
     unsubbed = await check_subscription(message.from_user.id)
     if unsubbed:
         btn = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text=f"🟢 📢 Kanal {i + 1} — Obuna bo'lish", url=url)]
+            [InlineKeyboardButton(text=f"📢 Kanal {i + 1} — Obuna bo'lish", url=url)]
             for i, url in enumerate(unsubbed)
-        ] + [[InlineKeyboardButton(text="🟡 ✅ Tasdiqlash", callback_data="check_sub")]])
+        ] + [[InlineKeyboardButton(text="✅ Tasdiqlash", callback_data="check_sub")]])
         await message.answer("Botdan foydalanish uchun quyidagi kanallarga obuna bo'ling:", reply_markup=btn)
         return
 
     start_text = get_setting("start_msg", "Salom {name}!").replace("{name}", message.from_user.full_name)
-    await message.answer(start_text, reply_markup=get_main_menu(), parse_mode="HTML")
+    await reply_with_colored_menu(message, start_text)
 
 
 @router.callback_query(F.data == "check_sub")
@@ -759,7 +892,7 @@ async def check_sub_cb(call: CallbackQuery):
     else:
         await call.message.delete()
         start_text = get_setting("start_msg", "Salom {name}!").replace("{name}", call.from_user.full_name)
-        await call.message.answer(f"✅ Obuna tasdiqlandi!\n\n{start_text}", reply_markup=get_main_menu())
+        await reply_with_colored_menu(call.from_user.id, f"✅ Obuna tasdiqlandi!\n\n{start_text}")
 
 
 # ================== MENU HANDLERLAR ==================
@@ -862,15 +995,15 @@ async def pay_ad_manual_start_cb(call: CallbackQuery, state: FSMContext):
 async def get_ad_receipt(message: Message, state: FSMContext):
     photo_id = message.photo[-1].file_id
     btn = InlineKeyboardMarkup(inline_keyboard=[[
-        InlineKeyboardButton(text="🟢 ✅ Tasdiqlash", callback_data=f"app_pay_{message.from_user.id}"),
-        InlineKeyboardButton(text="🔴 ❌ Bekor qilish", callback_data=f"rej_pay_{message.from_user.id}")
+        InlineKeyboardButton(text="✅ Tasdiqlash", callback_data=f"app_pay_{message.from_user.id}"),
+        InlineKeyboardButton(text="❌ Bekor qilish", callback_data=f"rej_pay_{message.from_user.id}")
     ]])
     await bot.send_photo(ADMIN_ID, photo_id,
         caption=f"💰 Yangi to'lov cheki (E'lon uchun)\n"
                 f"👤 {message.from_user.full_name} (@{message.from_user.username})\n"
                 f"🆔 ID: {message.from_user.id}",
         reply_markup=btn)
-    await message.answer("✅ Chek adminga yuborildi. Tasdiqlanishini kuting.", reply_markup=get_main_menu())
+    await reply_with_colored_menu(message, "✅ Chek adminga yuborildi. Tasdiqlanishini kuting.")
     await state.clear()
 
 
@@ -959,8 +1092,8 @@ async def get_phone(message: Message, state: FSMContext):
     db_execute("UPDATE users SET pending_approval=1, paid_slots=MAX(0, paid_slots-1) WHERE user_id=?", (message.from_user.id,))
 
     btn = InlineKeyboardMarkup(inline_keyboard=[[
-        InlineKeyboardButton(text="🟢 ✅ Tasdiqlash", callback_data=f"app_ad_{ad_id}"),
-        InlineKeyboardButton(text="🔴 ❌ Bekor qilish", callback_data=f"rej_ad_{ad_id}")
+        InlineKeyboardButton(text="✅ Tasdiqlash", callback_data=f"app_ad_{ad_id}"),
+        InlineKeyboardButton(text="❌ Bekor qilish", callback_data=f"rej_ad_{ad_id}")
     ]])
     try:
         await bot.send_video(ADMIN_ID, video=st.get('video'),
@@ -968,7 +1101,7 @@ async def get_phone(message: Message, state: FSMContext):
             reply_markup=btn, parse_mode="HTML")
     except:
         pass
-    await message.answer("✅ E'loningiz adminga yuborildi. Tasdiqlanishini kuting.", reply_markup=get_main_menu())
+    await reply_with_colored_menu(message, "✅ E'loningiz adminga yuborildi. Tasdiqlanishini kuting.")
     await state.clear()
 
 
@@ -1012,7 +1145,7 @@ async def buy_uc_cb(call: CallbackQuery, state: FSMContext):
     price = int(parts[4])
     await state.update_data(uc_amount=uc_amount, uc_price=price)
     await call.message.edit_text(
-        f"🟡 💎 <b>{uc_amount} UC — {price:,} so'm</b>\n\n".replace(",", " ") +
+        f"💎 <b>{uc_amount} UC — {price:,} so'm</b>\n\n".replace(",", " ") +
         f"🔢 <b>PUBG Mobile ID raqamingizni kiriting:</b>\n\n<i>Profil → o'ng tepadagi ID raqami</i>",
         parse_mode="HTML"
     )
@@ -1112,15 +1245,15 @@ async def get_uc_receipt(message: Message, state: FSMContext):
         f"🎮 PUBG ID: <code>{pubg_id}</code>\n📅 {now}"
     )
     btn = InlineKeyboardMarkup(inline_keyboard=[[
-        InlineKeyboardButton(text="🟢 ✅ Tasdiqlash", callback_data=f"uc_approve_{message.from_user.id}_{order_id}"),
-        InlineKeyboardButton(text="🔴 ❌ Bekor qilish", callback_data=f"uc_reject_{message.from_user.id}_{order_id}")
+        InlineKeyboardButton(text="✅ Tasdiqlash", callback_data=f"uc_approve_{message.from_user.id}_{order_id}"),
+        InlineKeyboardButton(text="❌ Bekor qilish", callback_data=f"uc_reject_{message.from_user.id}_{order_id}")
     ]])
     await bot.send_photo(ADMIN_ID, photo=receipt_id, caption=admin_text, parse_mode="HTML", reply_markup=btn)
-    await message.answer(
+    await reply_with_colored_menu(
+        message,
         f"✅ <b>Buyurtmangiz qabul qilindi!</b>\n\n"
         f"💎 <b>{uc_amount} UC</b>\n"
-        f"⏳ Admin chekni ko'rib, UC ni tez orada yuboradi.",
-        parse_mode="HTML", reply_markup=get_main_menu()
+        f"⏳ Admin chekni ko'rib, UC ni tez orada yuboradi."
     )
     await state.clear()
 
@@ -1143,11 +1276,10 @@ async def uc_approve_cb(call: CallbackQuery):
     order = db_execute("SELECT * FROM uc_orders WHERE id=?", (order_id,), fetchone=True)
     if order:
         db_execute("UPDATE uc_orders SET status='approved' WHERE id=?", (order_id,))
-        await bot.send_message(
+        await reply_with_colored_menu(
             user_id,
             f"🎉 <b>Tabriklaymiz! UC profilingizga tushdi!</b>\n\n"
-            f"💎 <b>{order['uc_amount']} UC</b> yuborildi!\n🙏 Xarid uchun rahmat!",
-            parse_mode="HTML", reply_markup=get_main_menu()
+            f"💎 <b>{order['uc_amount']} UC</b> yuborildi!\n🙏 Xarid uchun rahmat!"
         )
     caption = call.message.caption or call.message.text or ""
     try:
@@ -1170,10 +1302,9 @@ async def uc_reject_cb(call: CallbackQuery):
     order_id = int(parts[3])
 
     db_execute("UPDATE uc_orders SET status='rejected' WHERE id=?", (order_id,))
-    await bot.send_message(
+    await reply_with_colored_menu(
         user_id,
-        "❌ <b>Buyurtmangiz bekor qilindi.</b>\n\n🆘 Yordam orqali admin bilan bog'laning.",
-        parse_mode="HTML", reply_markup=get_main_menu()
+        "❌ <b>Buyurtmangiz bekor qilindi.</b>\n\n🆘 Yordam orqali admin bilan bog'laning."
     )
     caption = call.message.caption or call.message.text or ""
     try:
@@ -1227,11 +1358,11 @@ async def buy_stars_cb(call: CallbackQuery, state: FSMContext):
     price = int(parts[4])
     await state.update_data(stars_amount=stars_amount, stars_price=price)
     btn = InlineKeyboardMarkup(inline_keyboard=[[
-        InlineKeyboardButton(text="🟢 👤 O'ZIMGA", callback_data="stars_target_me"),
-        InlineKeyboardButton(text="🔵 👫 DO'STIMGA", callback_data="stars_target_friend"),
+        InlineKeyboardButton(text="👤 O'ZIMGA", callback_data="stars_target_me"),
+        InlineKeyboardButton(text="👫 DO'STIMGA", callback_data="stars_target_friend"),
     ]])
     await call.message.edit_text(
-        f"🟡 ⭐ <b>{stars_amount} Stars — {price:,} so'm</b>\n\nStars kimga kerak?".replace(",", " "),
+        f"⭐ <b>{stars_amount} Stars — {price:,} so'm</b>\n\nStars kimga kerak?".replace(",", " "),
         reply_markup=btn, parse_mode="HTML"
     )
     await state.set_state(StarsOrderForm.choose_target)
@@ -1353,13 +1484,13 @@ async def get_stars_receipt(message: Message, state: FSMContext):
         f"🎯 Kimga: <b>{target_text}</b>\n📅 {now}"
     )
     btn = InlineKeyboardMarkup(inline_keyboard=[[
-        InlineKeyboardButton(text="🟢 ✅ Stars Yuborildi", callback_data=f"stars_approve_{message.from_user.id}_{order_id}"),
-        InlineKeyboardButton(text="🔴 ❌ Bekor", callback_data=f"stars_reject_{message.from_user.id}_{order_id}")
+        InlineKeyboardButton(text="✅ Stars Yuborildi", callback_data=f"stars_approve_{message.from_user.id}_{order_id}"),
+        InlineKeyboardButton(text="❌ Bekor", callback_data=f"stars_reject_{message.from_user.id}_{order_id}")
     ]])
     await bot.send_photo(ADMIN_ID, photo=receipt_id, caption=admin_text, parse_mode="HTML", reply_markup=btn)
-    await message.answer(
-        f"✅ <b>Buyurtmangiz qabul qilindi!</b>\n\n⭐ <b>{stars_amount} Stars</b>\n⏳ Admin chekni ko'rib Stars ni yuboradi.",
-        parse_mode="HTML", reply_markup=get_main_menu()
+    await reply_with_colored_menu(
+        message,
+        f"✅ <b>Buyurtmangiz qabul qilindi!</b>\n\n⭐ <b>{stars_amount} Stars</b>\n⏳ Admin chekni ko'rib Stars ni yuboradi."
     )
     await state.clear()
 
@@ -1382,10 +1513,9 @@ async def stars_approve_cb(call: CallbackQuery):
     order = db_execute("SELECT * FROM stars_orders WHERE id=?", (order_id,), fetchone=True)
     if order:
         db_execute("UPDATE stars_orders SET status='approved' WHERE id=?", (order_id,))
-        await bot.send_message(
+        await reply_with_colored_menu(
             user_id,
-            f"🎉 <b>Tabriklaymiz! Stars yuborildi!</b>\n\n⭐ <b>{order['stars_amount']} Stars</b>\n🙏 Xarid uchun rahmat!",
-            parse_mode="HTML", reply_markup=get_main_menu()
+            f"🎉 <b>Tabriklaymiz! Stars yuborildi!</b>\n\n⭐ <b>{order['stars_amount']} Stars</b>\n🙏 Xarid uchun rahmat!"
         )
     caption = call.message.caption or ""
     try:
@@ -1405,10 +1535,9 @@ async def stars_reject_cb(call: CallbackQuery):
     order_id = int(parts[3])
 
     db_execute("UPDATE stars_orders SET status='rejected' WHERE id=?", (order_id,))
-    await bot.send_message(
+    await reply_with_colored_menu(
         user_id,
-        "❌ <b>Buyurtmangiz bekor qilindi.</b>\n\n🆘 Yordam orqali admin bilan bog'laning.",
-        parse_mode="HTML", reply_markup=get_main_menu()
+        "❌ <b>Buyurtmangiz bekor qilindi.</b>\n\n🆘 Yordam orqali admin bilan bog'laning."
     )
     caption = call.message.caption or ""
     try:
@@ -1459,7 +1588,7 @@ async def buy_premium_cb(call: CallbackQuery, state: FSMContext):
     duration = row["duration"] if row else "Noma'lum"
     await state.update_data(premium_pid=pid, premium_price=price, premium_duration=duration)
     await call.message.edit_text(
-        f"🟡 💜 <b>{duration} — {price:,} so'm</b>\n\n".replace(",", " ") +
+        f"💜 <b>{duration} — {price:,} so'm</b>\n\n".replace(",", " ") +
         f"Premium tushiriladigan profil username'ini kiriting:\n\nMasalan: <code>@username</code>",
         parse_mode="HTML"
     )
@@ -1552,15 +1681,15 @@ async def get_premium_receipt(message: Message, state: FSMContext):
     )
     btn = InlineKeyboardMarkup(inline_keyboard=[
         [
-            InlineKeyboardButton(text="🟢 ✅ Tasdiqlash", callback_data=f"premium_approve_{message.from_user.id}_{order_id}"),
-            InlineKeyboardButton(text="🔴 ❌ Bekor qilish", callback_data=f"premium_reject_{message.from_user.id}_{order_id}"),
+            InlineKeyboardButton(text="✅ Tasdiqlash", callback_data=f"premium_approve_{message.from_user.id}_{order_id}"),
+            InlineKeyboardButton(text="❌ Bekor qilish", callback_data=f"premium_reject_{message.from_user.id}_{order_id}"),
         ],
-        [InlineKeyboardButton(text="🔵 👤 Foydalanuvchiga o'tish", url=f"tg://user?id={message.from_user.id}")]
+        [InlineKeyboardButton(text="👤 Foydalanuvchiga o'tish", url=f"tg://user?id={message.from_user.id}")]
     ])
     await bot.send_photo(ADMIN_ID, photo=receipt_id, caption=admin_text, parse_mode="HTML", reply_markup=btn)
-    await message.answer(
-        f"✅ <b>Buyurtmangiz qabul qilindi!</b>\n\n💜 <b>{duration}</b> Telegram Premium\n⏳ Admin chekni ko'rib Premium ulanadi.",
-        parse_mode="HTML", reply_markup=get_main_menu()
+    await reply_with_colored_menu(
+        message,
+        f"✅ <b>Buyurtmangiz qabul qilindi!</b>\n\n💜 <b>{duration}</b> Telegram Premium\n⏳ Admin chekni ko'rib Premium ulanadi."
     )
     await state.clear()
 
@@ -1583,12 +1712,11 @@ async def premium_approve_cb(call: CallbackQuery):
     order = db_execute("SELECT * FROM premium_orders WHERE id=?", (order_id,), fetchone=True)
     if order:
         db_execute("UPDATE premium_orders SET status='approved' WHERE id=?", (order_id,))
-        await bot.send_message(
+        await reply_with_colored_menu(
             user_id,
             f"🎉 <b>Tabriklaymiz! Telegram Premium ulandi!</b>\n\n"
             f"💜 <b>{order['duration']}</b> Premium obuna\n"
-            f"👤 Profil: <code>@{order['target_username']}</code>\n\n🙏 Xarid uchun rahmat!",
-            parse_mode="HTML", reply_markup=get_main_menu()
+            f"👤 Profil: <code>@{order['target_username']}</code>\n\n🙏 Xarid uchun rahmat!"
         )
     caption = call.message.caption or ""
     try:
@@ -1608,10 +1736,9 @@ async def premium_reject_cb(call: CallbackQuery):
     order_id = int(parts[3])
 
     db_execute("UPDATE premium_orders SET status='rejected' WHERE id=?", (order_id,))
-    await bot.send_message(
+    await reply_with_colored_menu(
         user_id,
-        "❌ <b>Buyurtmangiz bekor qilindi.</b>\n\n🆘 Yordam orqali admin bilan bog'laning.",
-        parse_mode="HTML", reply_markup=get_main_menu()
+        "❌ <b>Buyurtmangiz bekor qilindi.</b>\n\n🆘 Yordam orqali admin bilan bog'laning."
     )
     caption = call.message.caption or ""
     try:
@@ -1625,12 +1752,12 @@ async def premium_reject_cb(call: CallbackQuery):
 @router.message(SupportForm.msg)
 async def get_support_msg(message: Message, state: FSMContext):
     btn = InlineKeyboardMarkup(inline_keyboard=[[
-        InlineKeyboardButton(text="🟢 💬 Javob berish", callback_data=f"reply_{message.from_user.id}")
+        InlineKeyboardButton(text="💬 Javob berish", callback_data=f"reply_{message.from_user.id}")
     ]])
     await bot.send_message(ADMIN_ID,
         f"📩 Yangi xabar!\n👤 {message.from_user.full_name} (ID: {message.from_user.id})\n\n{message.text}",
         reply_markup=btn)
-    await message.answer("✅ Xabaringiz adminga yetkazildi.", reply_markup=get_main_menu())
+    await reply_with_colored_menu(message, "✅ Xabaringiz adminga yetkazildi.")
     await state.clear()
 
 
@@ -1642,10 +1769,9 @@ async def approve_pay(call: CallbackQuery):
         return
     user_id = int(call.data.split("_")[2])
     db_execute("UPDATE users SET paid_slots = paid_slots + 1 WHERE user_id=?", (user_id,))
-    await bot.send_message(
+    await reply_with_colored_menu(
         user_id,
-        "✅ <b>To'lovingiz tasdiqlandi!</b>\n\n👇 «📝 E'lon berish» tugmasini bosing.",
-        parse_mode="HTML", reply_markup=get_main_menu()
+        "✅ <b>To'lovingiz tasdiqlandi!</b>\n\n👇 «📝 E'lon berish» tugmasini bosing."
     )
     try:
         await call.message.edit_caption(caption=(call.message.caption or "") + "\n\n✅ TASDIQLANGAN", reply_markup=None)
@@ -1660,7 +1786,7 @@ async def reject_pay(call: CallbackQuery):
         await call.answer("Ruxsat yo'q!", show_alert=True)
         return
     user_id = int(call.data.split("_")[2])
-    await bot.send_message(user_id, "❌ To'lovingiz admin tomonidan bekor qilindi.", reply_markup=get_main_menu())
+    await reply_with_colored_menu(user_id, "❌ To'lovingiz admin tomonidan bekor qilindi.")
     try:
         await call.message.edit_caption(caption=(call.message.caption or "") + "\n\n❌ BEKOR QILINGAN", reply_markup=None)
     except:
@@ -1682,8 +1808,8 @@ async def approve_ad(call: CallbackQuery):
     user_id = ad["user_id"]
     me = await bot.get_me()
     btn = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🟢 👤 Sotuvchi bilan aloqa", url=f"tg://user?id={user_id}")],
-        [InlineKeyboardButton(text="🔵 📢 Reklama berish", url=f"https://t.me/{me.username}?start=ad")]
+        [InlineKeyboardButton(text="👤 Sotuvchi bilan aloqa", url=f"tg://user?id={user_id}")],
+        [InlineKeyboardButton(text="📢 Reklama berish", url=f"https://t.me/{me.username}?start=ad")]
     ])
     try:
         await bot.send_video(MAIN_CHANNEL_ID, video=ad["video_id"], caption=ad["text"], reply_markup=btn, parse_mode="HTML")
@@ -1695,7 +1821,7 @@ async def approve_ad(call: CallbackQuery):
     db_execute("UPDATE users SET posted_ads=posted_ads+1, pending_approval=0 WHERE user_id=?", (user_id,))
 
     try:
-        await bot.send_message(user_id, "✅ <b>E'loningiz kanalga joylandi!</b>", parse_mode="HTML", reply_markup=get_main_menu())
+        await reply_with_colored_menu(user_id, "✅ <b>E'loningiz kanalga joylandi!</b>")
     except:
         pass
     try:
@@ -1719,7 +1845,7 @@ async def reject_ad(call: CallbackQuery):
     db_execute("UPDATE ads SET status='rejected' WHERE id=?", (ad_id,))
     db_execute("UPDATE users SET pending_approval=0 WHERE user_id=?", (user_id,))
     try:
-        await bot.send_message(user_id, "❌ E'loningiz admin tomonidan rad etildi.", reply_markup=get_main_menu())
+        await reply_with_colored_menu(user_id, "❌ E'loningiz admin tomonidan rad etildi.")
     except:
         pass
     try:
@@ -1921,7 +2047,7 @@ async def del_ch_btn(message: Message):
         await message.answer("Kanallar yo'q.")
         return
     btn = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text=f"🔴 🗑 O'chirish: {ch['channel_id']}", callback_data=f"delch_{ch['id']}")]
+        [InlineKeyboardButton(text=f"🗑 O'chirish: {ch['channel_id']}", callback_data=f"delch_{ch['id']}")]
         for ch in channels
     ])
     await message.answer("Qaysi kanalni o'chirasiz?", reply_markup=btn)
@@ -1989,10 +2115,10 @@ async def admin_uc_list_btn(message: Message):
     for item in prices:
         text += f"• {item['uc_amount']} UC — {item['price']:,} so'm\n".replace(",", " ")
         rows.append([
-            InlineKeyboardButton(text=f"🟡 💎 {item['uc_amount']} UC", callback_data="uc_info"),
-            InlineKeyboardButton(text="🔴 🗑", callback_data=f"del_uc_price_{item['id']}"),
+            InlineKeyboardButton(text=f"💎 {item['uc_amount']} UC", callback_data="uc_info"),
+            InlineKeyboardButton(text="🗑", callback_data=f"del_uc_price_{item['id']}"),
         ])
-    rows.append([InlineKeyboardButton(text="🔵 🔙 Yopish", callback_data="close_list")])
+    rows.append([InlineKeyboardButton(text="🔙 Yopish", callback_data="close_list")])
     await message.answer(text, parse_mode="HTML", reply_markup=InlineKeyboardMarkup(inline_keyboard=rows))
 
 
@@ -2013,8 +2139,8 @@ async def admin_uc_orders_btn(message: Message):
 @router.message(F.text == "🗑 UC narxlarini tozalash", F.from_user.id == ADMIN_ID)
 async def admin_clear_uc_btn(message: Message):
     btn = InlineKeyboardMarkup(inline_keyboard=[[
-        InlineKeyboardButton(text="🟢 ✅ Ha, o'chirish", callback_data="confirm_clear_uc"),
-        InlineKeyboardButton(text="🔴 ❌ Yo'q", callback_data="close_list"),
+        InlineKeyboardButton(text="✅ Ha, o'chirish", callback_data="confirm_clear_uc"),
+        InlineKeyboardButton(text="❌ Yo'q", callback_data="close_list"),
     ]])
     await message.answer("⚠️ <b>Barcha UC narxlarini o'chirasizmi?</b>", parse_mode="HTML", reply_markup=btn)
 
@@ -2070,10 +2196,10 @@ async def admin_stars_list_btn(message: Message):
     for item in prices:
         text += f"• {item['stars_amount']} Stars — {item['price']:,} so'm\n".replace(",", " ")
         rows.append([
-            InlineKeyboardButton(text=f"🟡 ⭐ {item['stars_amount']} Stars", callback_data="stars_info"),
-            InlineKeyboardButton(text="🔴 🗑", callback_data=f"del_stars_price_{item['id']}"),
+            InlineKeyboardButton(text=f"⭐ {item['stars_amount']} Stars", callback_data="stars_info"),
+            InlineKeyboardButton(text="🗑", callback_data=f"del_stars_price_{item['id']}"),
         ])
-    rows.append([InlineKeyboardButton(text="🔵 🔙 Yopish", callback_data="close_list")])
+    rows.append([InlineKeyboardButton(text="🔙 Yopish", callback_data="close_list")])
     await message.answer(text, parse_mode="HTML", reply_markup=InlineKeyboardMarkup(inline_keyboard=rows))
 
 
@@ -2094,8 +2220,8 @@ async def admin_stars_orders_btn(message: Message):
 @router.message(F.text == "🗑 Stars narxlarini tozalash", F.from_user.id == ADMIN_ID)
 async def admin_clear_stars_btn(message: Message):
     btn = InlineKeyboardMarkup(inline_keyboard=[[
-        InlineKeyboardButton(text="🟢 ✅ Ha, o'chirish", callback_data="confirm_clear_stars"),
-        InlineKeyboardButton(text="🔴 ❌ Yo'q", callback_data="close_list"),
+        InlineKeyboardButton(text="✅ Ha, o'chirish", callback_data="confirm_clear_stars"),
+        InlineKeyboardButton(text="❌ Yo'q", callback_data="close_list"),
     ]])
     await message.answer("⚠️ <b>Barcha Stars narxlarini o'chirasizmi?</b>", parse_mode="HTML", reply_markup=btn)
 
@@ -2143,10 +2269,10 @@ async def admin_premium_list_btn(message: Message):
     for item in prices:
         text += f"• {item['duration']} — {item['price']:,} so'm\n".replace(",", " ")
         rows.append([
-            InlineKeyboardButton(text=f"🟡 💜 {item['duration']}", callback_data="premium_info"),
-            InlineKeyboardButton(text="🔴 🗑", callback_data=f"del_premium_price_{item['id']}"),
+            InlineKeyboardButton(text=f"💜 {item['duration']}", callback_data="premium_info"),
+            InlineKeyboardButton(text="🗑", callback_data=f"del_premium_price_{item['id']}"),
         ])
-    rows.append([InlineKeyboardButton(text="🔵 🔙 Yopish", callback_data="close_list")])
+    rows.append([InlineKeyboardButton(text="🔙 Yopish", callback_data="close_list")])
     await message.answer(text, parse_mode="HTML", reply_markup=InlineKeyboardMarkup(inline_keyboard=rows))
 
 
@@ -2167,8 +2293,8 @@ async def admin_premium_orders_btn(message: Message):
 @router.message(F.text == "🗑 Premium narxlarini tozalash", F.from_user.id == ADMIN_ID)
 async def admin_clear_premium_btn(message: Message):
     btn = InlineKeyboardMarkup(inline_keyboard=[[
-        InlineKeyboardButton(text="🟢 ✅ Ha, o'chirish", callback_data="confirm_clear_premium"),
-        InlineKeyboardButton(text="🔴 ❌ Yo'q", callback_data="close_list"),
+        InlineKeyboardButton(text="✅ Ha, o'chirish", callback_data="confirm_clear_premium"),
+        InlineKeyboardButton(text="❌ Yo'q", callback_data="close_list"),
     ]])
     await message.answer("⚠️ <b>Barcha Premium narxlarini o'chirasizmi?</b>", parse_mode="HTML", reply_markup=btn)
 
@@ -2185,7 +2311,7 @@ async def back_to_admin_menu(message: Message):
 
 @router.message(F.text == "🔙 Asosiy menyu", F.from_user.id == ADMIN_ID)
 async def back_to_main_menu(message: Message):
-    await message.answer("Asosiy menyu:", reply_markup=get_main_menu())
+    await reply_with_colored_menu(message, "Asosiy menyu:")
 
 
 # ================== INLINE CALLBACK HANDLERLAR ==================
@@ -2213,7 +2339,6 @@ async def del_uc_price(call: CallbackQuery):
     if item:
         db_execute("DELETE FROM uc_prices WHERE id=?", (pid,))
         await call.answer(f"✅ {item['uc_amount']} UC narxi o'chirildi!", show_alert=True)
-        # Yangilash
         prices = db_execute("SELECT * FROM uc_prices ORDER BY uc_amount ASC", fetch=True)
         if not prices:
             try:
@@ -2226,10 +2351,10 @@ async def del_uc_price(call: CallbackQuery):
         for p in prices:
             text += f"• {p['uc_amount']} UC — {p['price']:,} so'm\n".replace(",", " ")
             rows.append([
-                InlineKeyboardButton(text=f"🟡 💎 {p['uc_amount']} UC", callback_data="uc_info"),
-                InlineKeyboardButton(text="🔴 🗑", callback_data=f"del_uc_price_{p['id']}"),
+                InlineKeyboardButton(text=f"💎 {p['uc_amount']} UC", callback_data="uc_info"),
+                InlineKeyboardButton(text="🗑", callback_data=f"del_uc_price_{p['id']}"),
             ])
-        rows.append([InlineKeyboardButton(text="🔵 🔙 Yopish", callback_data="close_list")])
+        rows.append([InlineKeyboardButton(text="🔙 Yopish", callback_data="close_list")])
         try:
             await call.message.edit_text(text, parse_mode="HTML", reply_markup=InlineKeyboardMarkup(inline_keyboard=rows))
         except:
@@ -2260,10 +2385,10 @@ async def del_stars_price(call: CallbackQuery):
         for p in prices:
             text += f"• {p['stars_amount']} Stars — {p['price']:,} so'm\n".replace(",", " ")
             rows.append([
-                InlineKeyboardButton(text=f"🟡 ⭐ {p['stars_amount']} Stars", callback_data="stars_info"),
-                InlineKeyboardButton(text="🔴 🗑", callback_data=f"del_stars_price_{p['id']}"),
+                InlineKeyboardButton(text=f"⭐ {p['stars_amount']} Stars", callback_data="stars_info"),
+                InlineKeyboardButton(text="🗑", callback_data=f"del_stars_price_{p['id']}"),
             ])
-        rows.append([InlineKeyboardButton(text="🔵 🔙 Yopish", callback_data="close_list")])
+        rows.append([InlineKeyboardButton(text="🔙 Yopish", callback_data="close_list")])
         try:
             await call.message.edit_text(text, parse_mode="HTML", reply_markup=InlineKeyboardMarkup(inline_keyboard=rows))
         except:
@@ -2294,10 +2419,10 @@ async def del_premium_price(call: CallbackQuery):
         for p in prices:
             text += f"• {p['duration']} — {p['price']:,} so'm\n".replace(",", " ")
             rows.append([
-                InlineKeyboardButton(text=f"🟡 💜 {p['duration']}", callback_data="premium_info"),
-                InlineKeyboardButton(text="🔴 🗑", callback_data=f"del_premium_price_{p['id']}"),
+                InlineKeyboardButton(text=f"💜 {p['duration']}", callback_data="premium_info"),
+                InlineKeyboardButton(text="🗑", callback_data=f"del_premium_price_{p['id']}"),
             ])
-        rows.append([InlineKeyboardButton(text="🔵 🔙 Yopish", callback_data="close_list")])
+        rows.append([InlineKeyboardButton(text="🔙 Yopish", callback_data="close_list")])
         try:
             await call.message.edit_text(text, parse_mode="HTML", reply_markup=InlineKeyboardMarkup(inline_keyboard=rows))
         except:
@@ -2380,7 +2505,7 @@ async def main():
     asyncio.create_task(payment_monitor())
     print("✅ Avtomatik to'lov tekshiruvchi ishga tushdi!")
 
-    print("✅ Bot ishga tushdi...")
+    print("✅ Bot ishga tushdi... (Rangli tugmalar bilan!)")
     await bot.delete_webhook(drop_pending_updates=True)
     await dp.start_polling(bot)
 
