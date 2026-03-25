@@ -19,8 +19,8 @@ from aiogram.filters import CommandStart, Command
 from aiohttp import web
 
 # ================== SOZLAMALAR ==================
-BOT_TOKEN = "8745465963:AAFEOfQ90-2Rb6ok10QMumHoNYfKwmPWZjA"
-ADMIN_ID = 8537782289
+BOT_TOKEN = "8766647589:AAHmY6x59GgKA25K3e737-7jomufi9wRv2Y"
+ADMIN_ID = 8332077004
 MAIN_CHANNEL_ID = "@Azizbekl2026"
 
 # ================== CHECKOUT.UZ SOZLAMALARI ==================
