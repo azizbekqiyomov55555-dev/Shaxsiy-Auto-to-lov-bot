@@ -49,27 +49,30 @@ async def get_checkout_url(amount, description):
 
 @dp.message(Command("start"))
 async def cmd_start(message: types.Message, state: FSMContext):
-    await message.answer("Assalomu alaykum! To'lov qilish uchun miqdorni (so'mda) kiriting:\n\nMasalan: 15000")
-    # Foydalanuvchini summa kutish holatiga o'tkazamiz
+    await message.answer(
+        "Assalomu alaykum! To'lov qilish uchun summani kiriting (so'mda):\n"
+        "ℹ️ Minimal miqdor: 100 so'm\n\n"
+        "Masalan: 5000"
+    )
     await state.set_state(PaymentStates.waiting_for_amount)
 
 @dp.message(PaymentStates.waiting_for_amount)
 async def process_amount(message: types.Message, state: FSMContext):
-    # Kiritilgan matn raqam ekanligini tekshiramiz
+    # Faqat raqamligini tekshirish
     if not message.text.isdigit():
-        await message.answer("Iltimos, faqat raqamlarda summa kiriting (masalan: 20000):")
+        await message.answer("Iltimos, faqat raqamlarda summa kiriting:")
         return
 
     amount = int(message.text)
     
-    # Minimal summa tekshiruvi (masalan 1000 so'm)
-    if amount < 1000:
-        await message.answer("Minimal to'lov miqdori 1,000 so'm. Qaytadan kiriting:")
+    # --- MINIMAL SUMMA TEKSHIRUVI (100 so'm) ---
+    if amount < 100:
+        await message.answer("❌ Xatolik: Minimal to'lov miqdori 100 so'm bo'lishi kerak.\nQaytadan kiriting:")
         return
 
     msg = await message.answer("⏳ To'lov havolasi yaratilmoqda...")
     
-    description = f"Foydalanuvchi ID: {message.from_user.id} to'lovi"
+    description = f"Foydalanuvchi @{message.from_user.username or message.from_user.id} to'lovi"
     pay_url = await get_checkout_url(amount, description)
 
     if pay_url:
@@ -77,14 +80,20 @@ async def process_amount(message: types.Message, state: FSMContext):
             [InlineKeyboardButton(text="💳 To'lov qilish", url=pay_url)]
         ])
         await msg.edit_text(
-            f"💰 To'lov miqdori: {amount:,} so'm\n"
-            f"Tasdiqlash uchun pastdagi tugmani bosing:",
+            f"✅ To'lov tayyor!\n\n"
+            f"💰 Summa: {amount:,} so'm\n"
+            f"📝 Ta'rif: {description}\n\n"
+            f"To'lash uchun pastdagi tugmani bosing:",
             reply_markup=keyboard
         )
-        # Holatni yakunlaymiz
+        # To'lov linki berilgach holatni tozalaymiz
         await state.clear()
     else:
-        await msg.edit_text("❌ To'lov tizimida xatolik yuz berdi. API kalit yoki kassa holatini tekshiring.")
+        # Agar API xato bersa (masalan kassa tasdiqlanmagan bo'lsa)
+        await msg.edit_text(
+            "⚠️ To'lov tizimi hozircha nofaol.\n"
+            "Iltimos, administrator kassa tasdiqlashini kuting."
+        )
         await state.clear()
 
 async def main():
