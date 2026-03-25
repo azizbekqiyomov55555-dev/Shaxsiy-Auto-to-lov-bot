@@ -237,14 +237,13 @@ def get_time_tashkent():
     return datetime.now(tz).strftime('%Y-%m-%d %H:%M:%S')
 
 async def check_subscription(user_id):
-    """Bu funksiya tuzatildi - xato shu yerda edi"""
     channels = db_execute("SELECT channel_id, url FROM channels", fetch=True)
     unsubbed = []
     for ch in channels:
         try:
             member = await bot.get_chat_member(ch["channel_id"], user_id)
-            if member.status in ['left', 'kicked']:                unsubbed.append(ch["url"])
-        except Exception:
+            if member.status in ['left', 'kicked']:
+                unsubbed.append(ch["url"])        except Exception:
             pass
     return unsubbed
 
@@ -292,8 +291,8 @@ async def check_payment_status(payment_id: int) -> dict:
     except Exception as e:
         logging.error(f"Checkout status xato: {e}")
         return {"status": "error"}
-# ================== PAYMENT MONITOR ==================
-async def payment_monitor():
+
+# ================== PAYMENT MONITOR ==================async def payment_monitor():
     logging.info("🚀 Avtomatik to'lov tekshiruvchi ishga tushdi...")
     while True:
         try:
@@ -390,8 +389,8 @@ async def payment_monitor():
                         order_db_id = order_row["id"] if order_row else 0
 
                         target_text = f"O'ziga (@{target_username})" if target_type == "me" else f"Do'stiga (@{target_username})"
-                        admin_text = (                            f"⭐ <b>STARS BUYURTMA — TO'LOV TASDIQLANDI!</b>\n\n"
-                            f"👤 {full_name} | @{username}\n"
+                        admin_text = (
+                            f"⭐ <b>STARS BUYURTMA — TO'LOV TASDIQLANDI!</b>\n\n"                            f"👤 {full_name} | @{username}\n"
                             f"🆔 ID: <code>{user_id}</code>\n\n"
                             f"⭐ Stars: <b>{stars_amount} Stars</b>\n"
                             f"💰 To'lov: <b>{stars_price:,} so'm (AUTO ✅)</b>\n\n".replace(",", "  ") +
@@ -439,8 +438,8 @@ async def payment_monitor():
                         btn = InlineKeyboardMarkup(inline_keyboard=[[
                             InlineKeyboardButton(text="✅ Premium Ulandi", callback_data=f"premium_approve_{user_id}_{order_db_id}", style="success"),
                             InlineKeyboardButton(text="❌ Bekor", callback_data=f"premium_reject_{user_id}_{order_db_id}", style="danger")
-                        ]])                        try:
-                            await bot.send_message(ADMIN_ID, admin_text, parse_mode="HTML", reply_markup=btn)
+                        ]])
+                        try:                            await bot.send_message(ADMIN_ID, admin_text, parse_mode="HTML", reply_markup=btn)
                         except:
                             pass
                         try:
@@ -491,7 +490,7 @@ async def send_auto_payment_link(
             )
             btn = InlineKeyboardMarkup(inline_keyboard=[
                 [InlineKeyboardButton(text="🟢 💳 To'lovni amalga oshirish", url=p_url, style="success")],
-                [InlineKeyboardButton(text="🔵 ‍💼 Manual to'lovga o'tish", callback_data=fallback_cb, style="primary")],
+                [InlineKeyboardButton(text="🔵 👨‍💼 Manual to'lovga o'tish", callback_data=fallback_cb, style="primary")],
             ])
             text = (
                 f"✅ <b>To'lov havolasi tayyor!</b>\n\n"
@@ -537,8 +536,8 @@ def get_payment_choice_keyboard(auto_cb: str, manual_cb: str) -> InlineKeyboardM
     ])
 
 # ================== ASOSIY MENU ==================
-def get_main_menu():    return ReplyKeyboardMarkup(
-        keyboard=[
+def get_main_menu():
+    return ReplyKeyboardMarkup(        keyboard=[
             [
                 KeyboardButton(text="📝 E'lon berish", style="primary"),
                 KeyboardButton(text="🆘 Yordam", style="danger"),
@@ -586,8 +585,8 @@ def get_stars_admin_menu():
             [KeyboardButton(text="➕ Stars narxi qo'shish"), KeyboardButton(text="📋 Stars narxlari")],
             [KeyboardButton(text="📦 Stars buyurtmalar"), KeyboardButton(text="🗑 Stars narxlarini tozalash")],
             [KeyboardButton(text="🔙 Admin menyu")],
-        ],        resize_keyboard=True,
-    )
+        ],
+        resize_keyboard=True,    )
 
 def get_premium_admin_menu():
     return ReplyKeyboardMarkup(
@@ -635,8 +634,8 @@ def get_uc_prices_keyboard(page=0):
     if page < total_pages - 1:
         nav_row.append(InlineKeyboardButton(text="Keyingi ➡️", callback_data=f"uc_page_{page + 1}", style="primary"))
     
-    if nav_row:        rows.append(nav_row)
-    
+    if nav_row:
+        rows.append(nav_row)    
     rows.append([InlineKeyboardButton(text="🔴 🔙 Orqaga", callback_data="uc_back", style="danger")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
@@ -684,8 +683,8 @@ def get_premium_prices_keyboard(page=0):
     current = prices[page * ITEMS_PER_PAGE:(page + 1) * ITEMS_PER_PAGE]
     
     rows = []
-    for item in current:        rows.append([InlineKeyboardButton(
-            text=f"🟡 💜 {item['duration']} — {item['price']:,} so'm".replace(",", "  "),
+    for item in current:
+        rows.append([InlineKeyboardButton(            text=f"🟡 💜 {item['duration']} — {item['price']:,} so'm".replace(",", "  "),
             callback_data=f"buy_premium_{item['id']}_{item['price']}"
         )])
     
@@ -733,8 +732,8 @@ async def check_sub_cb(call: CallbackQuery):
         await call.message.delete()
         start_text = get_setting("start_msg", "Salom {name}!").replace("{name}", call.from_user.full_name)
         await call.message.answer(f"✅ Obuna tasdiqlandi!\n\n{start_text}", reply_markup=get_main_menu())
-# ================== MENU HANDLERLAR ==================
-@router.message(F.text == "📝 E'lon berish")
+
+# ================== MENU HANDLERLAR ==================@router.message(F.text == "📝 E'lon berish")
 async def menu_ad_cb(message: Message, state: FSMContext):
     unsubbed = await check_subscription(message.from_user.id)
     if unsubbed:
@@ -831,8 +830,8 @@ async def get_ad_receipt(message: Message, state: FSMContext):
         InlineKeyboardButton(text="🔴 ❌ Bekor qilish", callback_data=f"rej_pay_{message.from_user.id}", style="danger")
     ]])
     await bot.send_photo(ADMIN_ID, photo_id,
-        caption=f"💰 Yangi to'lov cheki (E'lon uchun)\n"        f"👤 {message.from_user.full_name} (@{message.from_user.username})\n"
-        f"🆔 ID: {message.from_user.id}",
+        caption=f"💰 Yangi to'lov cheki (E'lon uchun)\n"
+        f"👤 {message.from_user.full_name} (@{message.from_user.username})\n"        f"🆔 ID: {message.from_user.id}",
         reply_markup=btn)
     await message.answer("✅ Chek adminga yuborildi. Tasdiqlanishini kuting.", reply_markup=get_main_menu())
     await state.clear()
@@ -929,8 +928,8 @@ async def uc_menu(message: Message, state: FSMContext):
     await state.clear()
     await message.answer(
         "🎮 PUBG MOBILE UC OLISH\n\n"
-        "💎 Quyidagi narxlardan birini tanlang!\n"        "⚡️ To'lov tasdiqlangandan so'ng UC tez yuboriladi.\n\n👇 UC miqdorini tanlang:",
-        reply_markup=get_uc_prices_keyboard(0), parse_mode="HTML"
+        "💎 Quyidagi narxlardan birini tanlang!\n"
+        "⚡️ To'lov tasdiqlangandan so'ng UC tez yuboriladi.\n\n👇 UC miqdorini tanlang:",        reply_markup=get_uc_prices_keyboard(0), parse_mode="HTML"
     )
 
 @router.callback_query(F.data == "uc_no_prices")
@@ -978,8 +977,8 @@ async def get_pubg_id(message: Message, state: FSMContext):
         f"💎 UC: {uc_amount} UC\n"
         f"💰 Summa: {price:,} so'm\n\n".replace(",", "  ") +
         f"🟢 Auto to'lov — checkout.uz orqali avtomatik\n"
-        f"🔵 Admin tasdiqlagan — karta orqali, chek yuborish",        reply_markup=btn, parse_mode="HTML"
-    )
+        f"🔵 Admin tasdiqlagan — karta orqali, chek yuborish",
+        reply_markup=btn, parse_mode="HTML"    )
     await state.set_state(UCOrderForm.payment_choice)
 
 @router.message(UCOrderForm.pubg_id_input)
@@ -1027,8 +1026,8 @@ async def uc_pay_manual_cb(call: CallbackQuery, state: FSMContext):
 
 @router.message(UCOrderForm.receipt, F.photo)
 async def get_uc_receipt(message: Message, state: FSMContext):
-    st = await state.get_data()    receipt_id = message.photo[-1].file_id
-    pubg_id = st.get('pubg_id', '—')
+    st = await state.get_data()
+    receipt_id = message.photo[-1].file_id    pubg_id = st.get('pubg_id', '—')
     uc_amount = st['uc_amount']
     price = st['uc_price']
     now = get_time_tashkent()
@@ -1076,8 +1075,8 @@ async def uc_approve_cb(call: CallbackQuery):
     order_id = int(parts[3])
     order = db_execute("SELECT * FROM uc_orders WHERE id=?", (order_id,), fetchone=True)
     if order:
-        db_execute("UPDATE uc_orders SET status='approved' WHERE id=?", (order_id,))        await bot.send_message(
-            user_id,
+        db_execute("UPDATE uc_orders SET status='approved' WHERE id=?", (order_id,))
+        await bot.send_message(            user_id,
             f"🎉 <b>Tabriklaymiz! UC profilingizga tushdi!</b>\n\n"
             f"💎 <b>{order['uc_amount']} UC</b> yuborildi!\n🙏 Xarid uchun rahmat!",
             parse_mode="HTML", reply_markup=get_main_menu()
@@ -1174,8 +1173,8 @@ async def stars_target_me(call: CallbackQuery, state: FSMContext):
         f"⭐ {stars_amount} Stars — {price:,} so'm\n".replace(",", "  ") +
         f"👤 O'zingizga: `@{username}`\n\nTo'lov usulini tanlang:",
         reply_markup=btn, parse_mode="HTML"
-    )    await state.set_state(StarsOrderForm.payment_choice)
-    await call.answer()
+    )
+    await state.set_state(StarsOrderForm.payment_choice)    await call.answer()
 
 @router.callback_query(F.data == "stars_target_friend", StarsOrderForm.choose_target)
 async def stars_target_friend(call: CallbackQuery, state: FSMContext):
@@ -1223,8 +1222,8 @@ async def stars_pay_auto_cb(call: CallbackQuery, state: FSMContext):
         is_callback=True
     )
 
-# STARS MANUAL TO'LOV@router.callback_query(F.data == "stars_pay_manual", StarsOrderForm.payment_choice)
-async def stars_pay_manual_cb(call: CallbackQuery, state: FSMContext):
+# STARS MANUAL TO'LOV
+@router.callback_query(F.data == "stars_pay_manual", StarsOrderForm.payment_choice)async def stars_pay_manual_cb(call: CallbackQuery, state: FSMContext):
     st = await state.get_data()
     stars_amount = st['stars_amount']
     price = st['stars_price']
@@ -1272,8 +1271,8 @@ async def get_stars_receipt(message: Message, state: FSMContext):
         InlineKeyboardButton(text="🔴 ❌ Bekor", callback_data=f"stars_reject_{message.from_user.id}_{order_id}", style="danger")
     ]])
     await bot.send_photo(ADMIN_ID, photo=receipt_id, caption=admin_text, parse_mode="HTML", reply_markup=btn)
-    await message.answer(        f"✅ <b>Buyurtmangiz qabul qilindi!</b>\n\n⭐ <b>{stars_amount} Stars</b>\n⏳ Admin chekni ko'rib Stars ni yuboradi.",
-        parse_mode="HTML", reply_markup=get_main_menu()
+    await message.answer(
+        f"✅ <b>Buyurtmangiz qabul qilindi!</b>\n\n⭐ <b>{stars_amount} Stars</b>\n⏳ Admin chekni ko'rib Stars ni yuboradi.",        parse_mode="HTML", reply_markup=get_main_menu()
     )
     await state.clear()
 
@@ -1321,8 +1320,8 @@ async def stars_reject_cb(call: CallbackQuery):
     )
     caption = call.message.caption or ""
     try:
-        await call.message.edit_caption(caption=caption + "\n\n❌ BEKOR QILINGAN", reply_markup=None)    except:
-        pass
+        await call.message.edit_caption(caption=caption + "\n\n❌ BEKOR QILINGAN", reply_markup=None)
+    except:        pass
     await call.answer("❌ Stars buyurtma bekor qilindi.", show_alert=True)
 
 # ================== TELEGRAM PREMIUM ==================
@@ -1370,8 +1369,8 @@ async def buy_premium_cb(call: CallbackQuery, state: FSMContext):
     await call.answer()
 
 @router.message(PremiumOrderForm.target_username)
-async def get_premium_username(message: Message, state: FSMContext):    username = message.text.strip().lstrip("@")
-    await state.update_data(target_username=username)
+async def get_premium_username(message: Message, state: FSMContext):
+    username = message.text.strip().lstrip("@")    await state.update_data(target_username=username)
     st = await state.get_data()
     price = st['premium_price']
     duration = st['premium_duration']
@@ -1419,8 +1418,8 @@ async def premium_pay_manual_cb(call: CallbackQuery, state: FSMContext):
         f"To'lov qilgach chek rasmini yuboring:",
         parse_mode="HTML"
     )
-    await state.set_state(PremiumOrderForm.receipt)    await call.answer()
-
+    await state.set_state(PremiumOrderForm.receipt)
+    await call.answer()
 @router.message(PremiumOrderForm.receipt, F.photo)
 async def get_premium_receipt(message: Message, state: FSMContext):
     st = await state.get_data()
@@ -1468,8 +1467,8 @@ async def get_premium_receipt_wrong(message: Message):
 async def premium_approve_cb(call: CallbackQuery):
     if call.from_user.id != ADMIN_ID:
         await call.answer("Ruxsat yo'q!", show_alert=True)
-        return    parts = call.data.split("_")
-    user_id = int(parts[2])
+        return
+    parts = call.data.split("_")    user_id = int(parts[2])
     order_id = int(parts[3])
     order = db_execute("SELECT * FROM premium_orders WHERE id=?", (order_id,), fetchone=True)
     if order:
@@ -1513,12 +1512,12 @@ async def premium_reject_cb(call: CallbackQuery):
 @router.message(SupportForm.msg)
 async def get_support_msg(message: Message, state: FSMContext):
     btn = InlineKeyboardMarkup(inline_keyboard=[[
-        InlineKeyboardButton(text="🟢  Javob berish", callback_data=f"reply_{message.from_user.id}", style="success")
+        InlineKeyboardButton(text="🟢 💬 Javob berish", callback_data=f"reply_{message.from_user.id}", style="success")
     ]])
     await bot.send_message(ADMIN_ID,
         f"📩 Yangi xabar!\n👤 {message.from_user.full_name} (ID: {message.from_user.id})\n\n{message.text}",
-        reply_markup=btn)    await message.answer("✅ Xabaringiz adminga yetkazildi.", reply_markup=get_main_menu())
-    await state.clear()
+        reply_markup=btn)
+    await message.answer("✅ Xabaringiz adminga yetkazildi.", reply_markup=get_main_menu())    await state.clear()
 
 # ================== ADMIN TO'LOV MANUAL TASDIQLASH (E'LON) ==================
 @router.callback_query(F.data.startswith("app_pay_"))
@@ -1530,7 +1529,7 @@ async def approve_pay(call: CallbackQuery):
     db_execute("UPDATE users SET paid_slots = paid_slots + 1 WHERE user_id=?", (user_id,))
     await bot.send_message(
         user_id,
-        "✅ To'lovingiz tasdiqlandi!\n\n👇 «📝 E'lon berish» tugmasini bosing.",
+        "✅ To'lovingiz tasdiqlandi!\n\n👇 « E'lon berish» tugmasini bosing.",
         parse_mode="HTML", reply_markup=get_main_menu()
     )
     try:
@@ -1566,8 +1565,8 @@ async def approve_ad(call: CallbackQuery):
     user_id = ad["user_id"]
     me = await bot.get_me()
     btn = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🟢 👤 Sotuvchi bilan aloqa", url=f"tg://user?id={user_id}", style="success")],        [InlineKeyboardButton(text="🔵  Reklama berish", url=f"https://t.me/{me.username}?start=ad", style="primary")]
-    ])
+        [InlineKeyboardButton(text="🟢 👤 Sotuvchi bilan aloqa", url=f"tg://user?id={user_id}", style="success")],
+        [InlineKeyboardButton(text="🔵  Reklama berish", url=f"https://t.me/{me.username}?start=ad", style="primary")]    ])
     try:
         await bot.send_video(MAIN_CHANNEL_ID, video=ad["video_id"], caption=ad["text"], reply_markup=btn, parse_mode="HTML")
     except Exception as e:
@@ -1615,8 +1614,8 @@ async def reply_support_cb(call: CallbackQuery, state: FSMContext):
     if call.from_user.id != ADMIN_ID:
         await call.answer("Ruxsat yo'q!", show_alert=True)
         return
-    user_id = int(call.data.split("_")[1])    await state.update_data(reply_to=user_id)
-    await call.message.answer("✍️ Foydalanuvchiga javob matnini kiriting:")
+    user_id = int(call.data.split("_")[1])
+    await state.update_data(reply_to=user_id)    await call.message.answer("✍️ Foydalanuvchiga javob matnini kiriting:")
     await state.set_state(AdminForm.reply_msg)
     await call.answer()
 
@@ -1664,8 +1663,8 @@ async def do_broadcast(message: Message, state: FSMContext):
         uid = user["user_id"]
         try:
             if message.photo:
-                await bot.send_photo(uid, photo=message.photo[-1].file_id, caption=message.caption or "", parse_mode="HTML")            elif message.video:
-                await bot.send_video(uid, video=message.video.file_id, caption=message.caption or "", parse_mode="HTML")
+                await bot.send_photo(uid, photo=message.photo[-1].file_id, caption=message.caption or "", parse_mode="HTML")
+            elif message.video:                await bot.send_video(uid, video=message.video.file_id, caption=message.caption or "", parse_mode="HTML")
             elif message.document:
                 await bot.send_document(uid, document=message.document.file_id, caption=message.caption or "", parse_mode="HTML")
             elif message.sticker:
@@ -1713,8 +1712,8 @@ async def admin_stats_btn(message: Message):
     stars_count = db_execute("SELECT COUNT(*) as cnt FROM stars_orders", fetchone=True)["cnt"]
     premium_count = db_execute("SELECT COUNT(*) as cnt FROM premium_orders", fetchone=True)["cnt"]
     await message.answer(
-        f"📊 <b>BOT STATISTIKASI</b>\n\n"        f"👥 Foydalanuvchilar: <b>{users_count} ta</b>\n"
-        f"📝 E'lonlar: <b>{ads_count} ta</b> (tasdiqlangan: {ads_approved})\n"
+        f"📊 <b>BOT STATISTIKASI</b>\n\n"
+        f"👥 Foydalanuvchilar: <b>{users_count} ta</b>\n"        f"📝 E'lonlar: <b>{ads_count} ta</b> (tasdiqlangan: {ads_approved})\n"
         f"💎 UC buyurtmalar: <b>{uc_count} ta</b> (tasdiqlangan: {uc_approved})\n"
         f"⭐ Stars buyurtmalar: <b>{stars_count} ta</b>\n"
         f"💜 Premium buyurtmalar: <b>{premium_count} ta</b>\n"
@@ -1762,8 +1761,8 @@ async def add_ch_btn(message: Message, state: FSMContext):
 
 @router.message(AdminForm.add_channel_id)
 async def add_ch_url(message: Message, state: FSMContext):
-    await state.update_data(ch_id=message.text)    await message.answer("Kanal ssilkasini kiriting (https://t.me/...):")
-    await state.set_state(AdminForm.add_channel_url)
+    await state.update_data(ch_id=message.text)
+    await message.answer("Kanal ssilkasini kiriting (https://t.me/...):")    await state.set_state(AdminForm.add_channel_url)
 
 @router.message(AdminForm.add_channel_url)
 async def save_ch(message: Message, state: FSMContext):
@@ -1860,8 +1859,8 @@ async def admin_uc_orders_btn(message: Message):
     await message.answer(text, parse_mode="HTML")
 
 @router.message(F.text == "🗑 UC narxlarini tozalash", F.from_user.id == ADMIN_ID)
-async def admin_clear_uc_btn(message: Message):    btn = InlineKeyboardMarkup(inline_keyboard=[[
-        InlineKeyboardButton(text="🟢 ✅ Ha, o'chirish", callback_data="confirm_clear_uc", style="success"),
+async def admin_clear_uc_btn(message: Message):
+    btn = InlineKeyboardMarkup(inline_keyboard=[[        InlineKeyboardButton(text="🟢 ✅ Ha, o'chirish", callback_data="confirm_clear_uc", style="success"),
         InlineKeyboardButton(text="🔴 ❌ Yo'q", callback_data="close_list", style="danger"),
     ]])
     await message.answer("⚠️ Barcha UC narxlarini o'chirasizmi?", parse_mode="HTML", reply_markup=btn)
@@ -1909,11 +1908,11 @@ async def admin_stars_list_btn(message: Message):
         await message.answer("❌ Hozircha Stars narxlari kiritilmagan.")
         return
     text = "⭐ STARS NARXLARI:\n\n"
-    rows = []    for item in prices:
-        text += f"• {item['stars_amount']} Stars — {item['price']:,} so'm\n".replace(",", "  ")
+    rows = []
+    for item in prices:        text += f"• {item['stars_amount']} Stars — {item['price']:,} so'm\n".replace(",", "  ")
         rows.append([
             InlineKeyboardButton(text=f"🟡 ⭐ {item['stars_amount']} Stars", callback_data="stars_info"),
-            InlineKeyboardButton(text="🔴 🗑", callback_data=f"del_stars_price_{item['id']}", style="danger"),
+            InlineKeyboardButton(text="🔴 ", callback_data=f"del_stars_price_{item['id']}", style="danger"),
         ])
     rows.append([InlineKeyboardButton(text="🔵 🔙 Yopish", callback_data="close_list", style="danger")])
     await message.answer(text, parse_mode="HTML", reply_markup=InlineKeyboardMarkup(inline_keyboard=rows))
@@ -1958,8 +1957,8 @@ async def add_premium_price_step2(message: Message, state: FSMContext):
 @router.message(AdminForm.premium_price_value)
 async def add_premium_price_save(message: Message, state: FSMContext):
     if not message.text.isdigit():
-        await message.answer("❗️ Faqat raqam kiriting!")        return
-    st = await state.get_data()
+        await message.answer("❗️ Faqat raqam kiriting!")
+        return    st = await state.get_data()
     duration = st['premium_duration']
     price = int(message.text)
     db_execute("INSERT INTO premium_prices (duration, price) VALUES (?,?)", (duration, price))
@@ -2007,8 +2006,8 @@ async def admin_clear_premium_btn(message: Message):
 @router.message(F.text == "📦 Buyurtmalar", F.from_user.id == ADMIN_ID)
 async def admin_orders_btn(message: Message):
     await message.answer("📦 Buyurtmalar bo'limi:", reply_markup=get_orders_admin_menu())
-@router.message(F.text == "🔙 Admin menyu", F.from_user.id == ADMIN_ID)
-async def back_to_admin_menu(message: Message):
+
+@router.message(F.text == "🔙 Admin menyu", F.from_user.id == ADMIN_ID)async def back_to_admin_menu(message: Message):
     await message.answer("⚙️ Admin panel:", reply_markup=get_admin_menu())
 
 @router.message(F.text == "🔙 Asosiy menyu", F.from_user.id == ADMIN_ID)
@@ -2053,11 +2052,11 @@ async def del_uc_price(call: CallbackQuery):
             text += f"• {p['uc_amount']} UC — {p['price']:,} so'm\n".replace(",", "  ")
             rows.append([
                 InlineKeyboardButton(text=f"🟡  {p['uc_amount']} UC", callback_data="uc_info"),
-                InlineKeyboardButton(text="🔴 🗑", callback_data=f"del_uc_price_{p['id']}", style="danger"),
+                InlineKeyboardButton(text="🔴 ", callback_data=f"del_uc_price_{p['id']}", style="danger"),
             ])
         rows.append([InlineKeyboardButton(text="🔵 🔙 Yopish", callback_data="close_list", style="danger")])
-        try:            await call.message.edit_text(text, parse_mode="HTML", reply_markup=InlineKeyboardMarkup(inline_keyboard=rows))
-        except:
+        try:
+            await call.message.edit_text(text, parse_mode="HTML", reply_markup=InlineKeyboardMarkup(inline_keyboard=rows))        except:
             pass
     else:
         await call.answer("Topilmadi!", show_alert=True)
@@ -2105,8 +2104,8 @@ async def del_premium_price(call: CallbackQuery):
     pid = int(call.data.split("_")[3])
     item = db_execute("SELECT * FROM premium_prices WHERE id=?", (pid,), fetchone=True)
     if item:
-        db_execute("DELETE FROM premium_prices WHERE id=?", (pid,))        await call.answer(f"✅ {item['duration']} narxi o'chirildi!", show_alert=True)
-        
+        db_execute("DELETE FROM premium_prices WHERE id=?", (pid,))
+        await call.answer(f"✅ {item['duration']} narxi o'chirildi!", show_alert=True)        
         prices = db_execute("SELECT * FROM premium_prices ORDER BY price ASC", fetch=True)
         if not prices:
             try:
@@ -2154,8 +2153,8 @@ async def confirm_clear_stars(call: CallbackQuery):
         await call.message.delete()
     except:
         pass
-@router.callback_query(F.data == "confirm_clear_premium")
-async def confirm_clear_premium(call: CallbackQuery):
+
+@router.callback_query(F.data == "confirm_clear_premium")async def confirm_clear_premium(call: CallbackQuery):
     if call.from_user.id != ADMIN_ID:
         await call.answer("Ruxsat yo'q!", show_alert=True)
         return
@@ -2183,14 +2182,12 @@ async def check_bot_status(message: Message):
     except Exception as e:
         await message.answer(f"❌ Xatolik: {e}")
 
-
 # ================== ASOSIY ISHGA TUSHIRISH ==================
 async def main():
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s - %(levelname)s - %(message)s"
     )
-
     print("⏳ SQLite baza tayyorlanmoqda...")
     init_db()
     print("✅ Baza tayyor!")
@@ -2204,7 +2201,6 @@ async def main():
     print("✅ Bot ishga tushdi...")
     await bot.delete_webhook(drop_pending_updates=True)
     await dp.start_polling(bot)
-
 
 if __name__ == "__main__":
     asyncio.run(main())
