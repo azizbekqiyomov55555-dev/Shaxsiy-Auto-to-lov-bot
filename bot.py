@@ -3,24 +3,22 @@ import logging
 import aiohttp
 from datetime import datetime
 import pytz
-from io import BytesIO
-from PIL import Image, ImageDraw, ImageFont
+import json
+import hashlib
+import hmac
+from aiohttp import web
+
 from aiogram import Bot, Dispatcher, F, Router
 from aiogram.types import (
     Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton,
-    BufferedInputFile, ReplyKeyboardRemove, ReplyKeyboardMarkup, KeyboardButton,
-    WebAppInfo
+    ReplyKeyboardMarkup, KeyboardButton
 )
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.filters import CommandStart, Command
-from aiohttp import web
-import json
-import hashlib
-import hmac
 
 # ================== SOZLAMALAR ==================
-BOT_TOKEN = "8766647589:AAHmY6x59GgKA25K3e737-7jomufi9wRv2Y"
+BOT_TOKEN = "YANGI_TOKEN_8631309919:AAHmHJWlRqiXKBiMkrPIxvd1LyHrm6MPIvc"
 ADMIN_ID = 8332077004
 MAIN_CHANNEL_ID = "@Azizbekl2026"
 
@@ -28,7 +26,7 @@ MAIN_CHANNEL_ID = "@Azizbekl2026"
 CHECKOUT_API_KEY = "N2MxYjNkYmI4ZjdlYjVjMWYxZTM"
 CHECKOUT_MERCHANT_ID = "46"
 CHECKOUT_BASE_URL = "https://checkout.uz/api/v1"
-WEBHOOK_URL = "https://shaxsiy-auto-to-lov-bot-production.up.railway.app"
+WEBHOOK_URL = "https://shaxsiy-auto-to-lov-bot-production.up.railway.app/webhook"
 
 # ================== JSONBIN.IO SOZLAMALARI ==================
 JSONBIN_API_KEY = "$2a$10$HEa6qY6FgdbvtwnxhGkIE.59M05ctGsBYJn7zuLyvhrrqsWH5peje"
@@ -37,7 +35,6 @@ JSONBIN_BASE_URL = "https://api.jsonbin.io/v3"
 
 # ================== JSONBIN.IO YORDAMCHI FUNKSIYALAR ==================
 async def jb_read() -> dict:
-    """Jsonbin dan barcha ma'lumotlarni o'qish"""
     url = f"{JSONBIN_BASE_URL}/b/{JSONBIN_BIN_ID}/latest"
     headers = {"X-Master-Key": JSONBIN_API_KEY}
     async with aiohttp.ClientSession() as session:
@@ -48,7 +45,6 @@ async def jb_read() -> dict:
             return {}
 
 async def jb_write(data: dict) -> bool:
-    """Jsonbin ga ma'lumotlarni yozish"""
     url = f"{JSONBIN_BASE_URL}/b/{JSONBIN_BIN_ID}"
     headers = {
         "X-Master-Key": JSONBIN_API_KEY,
@@ -59,53 +55,28 @@ async def jb_write(data: dict) -> bool:
             return resp.status == 200
 
 async def init_db():
-    """Boshlang'ich ma'lumotlar strukturasi"""
     data = await jb_read()
     changed = False
-    
     if not data:
         data = {}
         changed = True
-    
-    if "users" not in data:
-        data["users"] = []
-        changed = True
-    if "channels" not in data:
-        data["channels"] = []
-        changed = True
-    if "ads" not in data:
-        data["ads"] = []
-        changed = True
-    if "uc_prices" not in data:
-        data["uc_prices"] = []
-        changed = True
-    if "uc_orders" not in data:
-        data["uc_orders"] = []
-        changed = True
-    if "stars_prices" not in data:
-        data["stars_prices"] = []
-        changed = True
-    if "stars_orders" not in data:
-        data["stars_orders"] = []
-        changed = True
-    if "premium_prices" not in data:
-        data["premium_prices"] = []
-        changed = True
-    if "premium_orders" not in data:
-        data["premium_orders"] = []
-        changed = True
+    for key in ["users", "channels", "ads", "uc_prices", "uc_orders",
+                "stars_prices", "stars_orders", "premium_prices", "premium_orders",
+                "payment_orders", "settings"]:
+        if key not in data:
+            data[key] = []
+            changed = True
     if "settings" not in data:
         data["settings"] = {
             "price": "50000",
             "card": "8600 0000 0000 0000 (Ism Familiya)",
-            "start_msg": "Salom {name}! Siz bu botdan PUBG Mobile akkauntingizni obzorini joylashingiz mumkin va u video kanalga joylanadi.",
+            "start_msg": "Salom {name}! Botdan foydalaning.",
             "site_url": "https://azizbekqiyomov55555-dev.github.io/Test-bot-"
         }
         changed = True
     if "next_id" not in data:
         data["next_id"] = 1
         changed = True
-
     if changed:
         await jb_write(data)
     return data
@@ -126,9 +97,6 @@ class AdForm(StatesGroup):
     price = State()
     phone = State()
 
-class PaymentForm(StatesGroup):
-    receipt = State()
-
 class SupportForm(StatesGroup):
     msg = State()
 
@@ -139,12 +107,8 @@ class AdminForm(StatesGroup):
     add_channel_id = State()
     add_channel_url = State()
     reply_msg = State()
-    uc_card = State()
     uc_price_amount = State()
     uc_price_value = State()
-    main_card = State()
-    stars_card = State()
-    premium_card = State()
     stars_price_amount = State()
     stars_price_value = State()
     premium_price_duration = State()
@@ -152,17 +116,13 @@ class AdminForm(StatesGroup):
 
 class UCOrderForm(StatesGroup):
     pubg_screenshot = State()
-    receipt = State()
 
 class StarsOrderForm(StatesGroup):
     choose_target = State()
     friend_username = State()
-    receipt = State()
 
 class PremiumOrderForm(StatesGroup):
-    choose_duration = State()
     target_username = State()
-    receipt = State()
 
 # ================== BOT VA ROUTER ==================
 bot = Bot(token=BOT_TOKEN)
@@ -173,10 +133,6 @@ router = Router()
 def get_time_tashkent():
     tz = pytz.timezone('Asia/Tashkent')
     return datetime.now(tz).strftime('%Y-%m-%d %H:%M:%S')
-
-async def get_setting(key):
-    data = await jb_read()
-    return data.get("settings", {}).get(key, "")
 
 async def check_subscription(user_id):
     data = await jb_read()
@@ -191,126 +147,126 @@ async def check_subscription(user_id):
             pass
     return unsubbed
 
-# ================== ASOSIY MENU (RANGLI TUGMALAR) ==================
 def get_main_menu():
     kb = ReplyKeyboardMarkup(
         keyboard=[
-            [
-                KeyboardButton(text="📝 E'lon berish"),
-                KeyboardButton(text="🆘 Yordam")
-            ],
-            [
-                KeyboardButton(text="🎮 PUBG MOBILE UC OLISH 💎")
-            ],
-            [
-                KeyboardButton(text="⭐ TELEGRAM PREMIUM"),
-                KeyboardButton(text="🌟 STARS OLISH")
-            ],
+            [KeyboardButton(text="📝 E'lon berish"), KeyboardButton(text="🆘 Yordam")],
+            [KeyboardButton(text="🎮 PUBG MOBILE UC OLISH 💎")],
+            [KeyboardButton(text="⭐ TELEGRAM PREMIUM"), KeyboardButton(text="🌟 STARS OLISH")],
         ],
         resize_keyboard=True,
-        is_persistent=True,
-        input_field_placeholder="Quyidagi tugmalardan birini tanlang 👇"
+        is_persistent=True
     )
     return kb
 
-# ================== UC NARXLARI INLINE KLAVIATURA ==================
-def get_uc_prices_keyboard_from_data(prices, page=0):
-    if not prices:
-        return InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="❌ Hozircha narxlar kiritilmagan", callback_data="uc_no_prices")]
-        ])
-    
-    ITEMS_PER_PAGE = 5
-    total_pages = (len(prices) + ITEMS_PER_PAGE - 1) // ITEMS_PER_PAGE
-    page = max(0, min(page, total_pages - 1))
-    start = page * ITEMS_PER_PAGE
-    end = start + ITEMS_PER_PAGE
-    current_prices = prices[start:end]
+# ================== CHECKOUT.UZ FUNKSIYALAR ==================
+async def create_checkout_payment(amount: int, description: str, order_id: int, user_id: int) -> str:
+    """Create payment link via checkout.uz and return payment URL."""
+    url = f"{CHECKOUT_BASE_URL}/payment"
+    headers = {
+        "Authorization": f"Bearer {CHECKOUT_API_KEY}",
+        "Content-Type": "application/json"
+    }
+    payload = {
+        "merchant_id": CHECKOUT_MERCHANT_ID,
+        "amount": amount,
+        "description": description,
+        "callback_url": WEBHOOK_URL,
+        "metadata": {
+            "order_id": order_id,
+            "user_id": user_id,
+            "type": description.split()[0]  # e.g., "UC", "Stars", "Premium", "Ad"
+        }
+    }
+    async with aiohttp.ClientSession() as session:
+        async with session.post(url, json=payload, headers=headers) as resp:
+            if resp.status == 201:
+                data = await resp.json()
+                return data.get("payment_url")
+            else:
+                error = await resp.text()
+                logging.error(f"Checkout.uz error: {error}")
+                return None
 
-    rows = []
-    for item in current_prices:
-        rows.append([
-            InlineKeyboardButton(
-                text=f"💎 {item['uc_amount']} UC — {item['price']:,} so'm".replace(",", " "),
-                callback_data=f"buy_uc_{item['id']}_{item['uc_amount']}_{item['price']}"
-            )
-        ])
+async def verify_checkout_signature(payload: bytes, signature: str) -> bool:
+    secret = CHECKOUT_API_KEY.encode()
+    computed = hmac.new(secret, payload, hashlib.sha256).hexdigest()
+    return hmac.compare_digest(computed, signature)
 
-    nav_row = []
-    if page > 0:
-        nav_row.append(InlineKeyboardButton(text="⬅️ Oldingi", callback_data=f"uc_page_{page-1}"))
-    if page < total_pages - 1:
-        nav_row.append(InlineKeyboardButton(text="Keyingi ➡️", callback_data=f"uc_page_{page+1}"))
-    if nav_row:
-        rows.append(nav_row)
+# ================== WEBHOOK HANDLER ==================
+async def webhook_handler(request: web.Request):
+    signature = request.headers.get("X-Signature", "")
+    body = await request.read()
+    if not await verify_checkout_signature(body, signature):
+        return web.Response(status=400, text="Invalid signature")
 
-    rows.append([InlineKeyboardButton(text="🔙 Orqaga", callback_data="uc_back")])
-    return InlineKeyboardMarkup(inline_keyboard=rows)
+    data = await request.json()
+    payment_id = data.get("payment_id")
+    status = data.get("status")
+    metadata = data.get("metadata", {})
+    order_id = metadata.get("order_id")
+    user_id = metadata.get("user_id")
+    payment_type = metadata.get("type")
 
-def get_stars_prices_keyboard_from_data(prices, page=0):
-    if not prices:
-        return InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="❌ Hozircha narxlar kiritilmagan", callback_data="stars_no_prices")]
-        ])
-    
-    ITEMS_PER_PAGE = 5
-    total_pages = (len(prices) + ITEMS_PER_PAGE - 1) // ITEMS_PER_PAGE
-    page = max(0, min(page, total_pages - 1))
-    start = page * ITEMS_PER_PAGE
-    end = start + ITEMS_PER_PAGE
-    current_prices = prices[start:end]
+    if status == "completed":
+        db = await jb_read()
+        payment_orders = db.get("payment_orders", [])
+        for po in payment_orders:
+            if po["payment_id"] == payment_id:
+                po["status"] = "paid"
+                break
+        else:
+            payment_orders.append({
+                "payment_id": payment_id,
+                "order_id": order_id,
+                "user_id": user_id,
+                "type": payment_type,
+                "status": "paid",
+                "paid_at": get_time_tashkent()
+            })
+        db["payment_orders"] = payment_orders
 
-    rows = []
-    for item in current_prices:
-        rows.append([
-            InlineKeyboardButton(
-                text=f"⭐ {item['stars_amount']} Stars — {item['price']:,} so'm".replace(",", " "),
-                callback_data=f"buy_stars_{item['id']}_{item['stars_amount']}_{item['price']}"
-            )
-        ])
+        if payment_type == "Ad":
+            users = db.get("users", [])
+            for u in users:
+                if u["user_id"] == user_id:
+                    u["paid_slots"] = u.get("paid_slots", 0) + 1
+                    break
+            db["users"] = users
+            await bot.send_message(user_id, "✅ To'lovingiz qabul qilindi! Endi e'lon berishingiz mumkin.", reply_markup=get_main_menu())
 
-    nav_row = []
-    if page > 0:
-        nav_row.append(InlineKeyboardButton(text="⬅️ Oldingi", callback_data=f"stars_page_{page-1}"))
-    if page < total_pages - 1:
-        nav_row.append(InlineKeyboardButton(text="Keyingi ➡️", callback_data=f"stars_page_{page+1}"))
-    if nav_row:
-        rows.append(nav_row)
+        elif payment_type == "UC":
+            uc_orders = db.get("uc_orders", [])
+            for o in uc_orders:
+                if o["id"] == order_id:
+                    o["status"] = "paid"
+                    break
+            db["uc_orders"] = uc_orders
+            await bot.send_message(ADMIN_ID, f"💎 UC buyurtma #{order_id} to'landi!\nFoydalanuvchi: {user_id}\nTo'lovni tekshirib UC yuboring.")
 
-    rows.append([InlineKeyboardButton(text="🔙 Orqaga", callback_data="stars_back")])
-    return InlineKeyboardMarkup(inline_keyboard=rows)
+        elif payment_type == "Stars":
+            stars_orders = db.get("stars_orders", [])
+            for o in stars_orders:
+                if o["id"] == order_id:
+                    o["status"] = "paid"
+                    break
+            db["stars_orders"] = stars_orders
+            await bot.send_message(ADMIN_ID, f"⭐ Stars buyurtma #{order_id} to'landi!\nFoydalanuvchi: {user_id}\nTo'lovni tekshirib Stars yuboring.")
 
-def get_premium_prices_keyboard_from_data(prices, page=0):
-    if not prices:
-        return InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="❌ Hozircha narxlar kiritilmagan", callback_data="premium_no_prices")]
-        ])
-    
-    ITEMS_PER_PAGE = 5
-    total_pages = (len(prices) + ITEMS_PER_PAGE - 1) // ITEMS_PER_PAGE
-    page = max(0, min(page, total_pages - 1))
-    start = page * ITEMS_PER_PAGE
-    end = start + ITEMS_PER_PAGE
-    current_prices = prices[start:end]
+        elif payment_type == "Premium":
+            premium_orders = db.get("premium_orders", [])
+            for o in premium_orders:
+                if o["id"] == order_id:
+                    o["status"] = "paid"
+                    break
+            db["premium_orders"] = premium_orders
+            await bot.send_message(ADMIN_ID, f"⭐ Premium buyurtma #{order_id} to'landi!\nFoydalanuvchi: {user_id}\nTo'lovni tekshirib Premium ulang.")
 
-    rows = []
-    for item in current_prices:
-        rows.append([
-            InlineKeyboardButton(
-                text=f"⭐ {item['duration']} — {item['price']:,} so'm".replace(",", " "),
-                callback_data=f"buy_premium_{item['id']}_{item['price']}"
-            )
-        ])
-    nav_row = []
-    if page > 0:
-        nav_row.append(InlineKeyboardButton(text="⬅️ Oldingi", callback_data=f"premium_page_{page-1}"))
-    if page < total_pages - 1:
-        nav_row.append(InlineKeyboardButton(text="Keyingi ➡️", callback_data=f"premium_page_{page+1}"))
-    if nav_row:
-        rows.append(nav_row)
-
-    rows.append([InlineKeyboardButton(text="🔙 Orqaga", callback_data="premium_back")])
-    return InlineKeyboardMarkup(inline_keyboard=rows)
+        await jb_write(db)
+        return web.Response(status=200, text="OK")
+    else:
+        # Payment failed (ignored)
+        return web.Response(status=200, text="OK")
 
 # ================== START VA OBUNA ==================
 @router.message(CommandStart())
@@ -318,9 +274,7 @@ async def start_cmd(message: Message, state: FSMContext):
     await state.clear()
     data = await jb_read()
     users = data.get("users", [])
-    user_exists = any(u["user_id"] == message.from_user.id for u in users)
-    
-    if not user_exists:
+    if not any(u["user_id"] == message.from_user.id for u in users):
         users.append({
             "user_id": message.from_user.id,
             "full_name": message.from_user.full_name,
@@ -339,7 +293,7 @@ async def start_cmd(message: Message, state: FSMContext):
             [InlineKeyboardButton(text=f"📢 Kanal {i+1} — Obuna bo'lish", url=url)]
             for i, url in enumerate(unsubbed)
         ] + [[InlineKeyboardButton(text="✅ Tasdiqlash", callback_data="check_sub")]])
-        await message.answer("Botdan foydalanish uchun quyidagi kanallarga obuna bo'ling:", reply_markup=btn)
+        await message.answer("Botdan foydalanish uchun kanallarga obuna bo'ling:", reply_markup=btn)
         return
 
     start_text = data.get("settings", {}).get("start_msg", "Salom {name}!").replace("{name}", message.from_user.full_name)
@@ -359,15 +313,13 @@ async def check_sub_cb(call: CallbackQuery):
 # ================== MENU HANDLERLAR ==================
 @router.message(F.text == "📝 E'lon berish")
 async def menu_ad_cb(message: Message, state: FSMContext):
-    unsubbed = await check_subscription(message.from_user.id)
-    if unsubbed:
-        await message.answer("Iltimos, oldin kanallarga obuna bo'ling. /start ni bosing.")
+    if await check_subscription(message.from_user.id):
+        await message.answer("Iltimos, avval kanallarga obuna bo'ling. /start ni bosing.")
         return
-    
+
     data = await jb_read()
     users = data.get("users", [])
     user = next((u for u in users if u["user_id"] == message.from_user.id), None)
-
     if not user:
         await message.answer("Iltimos, /start bosing.")
         return
@@ -377,21 +329,40 @@ async def menu_ad_cb(message: Message, state: FSMContext):
     pending = user.get("pending_approval", 0)
 
     if pending:
-        await message.answer(
-            "⏳ Sizning oldingi e'loningiz admin tomonidan ko'rib chiqilmoqda.\n"
-            "Admin tasdiqlaganidan so'ng yangi e'lon berishingiz mumkin."
-        )
+        await message.answer("⏳ Oldingi e'loningiz admin tomonidan ko'rib chiqilmoqda. Yangi e'lon berish uchun kuting.")
         return
 
     if posted >= (1 + paid):
-        price = data.get("settings", {}).get("price", "50000")
-        btn = InlineKeyboardMarkup(inline_keyboard=[[
-            InlineKeyboardButton(text="💳 To'lov qilish", callback_data="pay_ad")
-        ]])
-        await message.answer(
-            f"Sizning bepul e'lonlar limitingiz tugagan.\n"
-            f"1-video bepul, 2-sidan boshlab pullik.\n"
-            f"E'lon narxi: {price} so'm.", reply_markup=btn)
+        price = int(data.get("settings", {}).get("price", "50000"))
+        # Create payment order
+        order_id = get_next_id(data)
+        payment_order = {
+            "id": get_next_id(data),  # separate ID for payment record
+            "order_id": order_id,
+            "user_id": message.from_user.id,
+            "type": "Ad",
+            "amount": price,
+            "status": "pending",
+            "created_at": get_time_tashkent()
+        }
+        data["payment_orders"].append(payment_order)
+        await jb_write(data)
+
+        payment_url = await create_checkout_payment(price, f"Ad {order_id}", order_id, message.from_user.id)
+        if payment_url:
+            btn = InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="💳 To'lov qilish", url=payment_url)],
+                [InlineKeyboardButton(text="🔄 Tekshirish", callback_data=f"check_payment_{order_id}")]
+            ])
+            await message.answer(
+                f"Sizning bepul e'lonlar limitingiz tugagan.\n"
+                f"1-video bepul, 2-sidan boshlab pullik.\n"
+                f"E'lon narxi: {price} so'm.\n\n"
+                f"To'lovni quyidagi tugma orqali amalga oshiring:",
+                reply_markup=btn
+            )
+        else:
+            await message.answer("❌ To'lov tizimida xatolik yuz berdi. Iltimos, keyinroq urinib ko'ring.")
         return
 
     await message.answer("E'loningizni boshlaymiz.\nIltimos, akkaunt obzori videosini yuboring:")
@@ -402,34 +373,37 @@ async def menu_help_cb(message: Message, state: FSMContext):
     await message.answer("Adminga xabaringizni yozib qoldiring:")
     await state.set_state(SupportForm.msg)
 
-# ================== 🎮 PUBG MOBILE UC OLISH ==================
+# ================== PUBG MOBILE UC OLISH ==================
+def get_uc_prices_keyboard(data, page=0):
+    prices = sorted(data.get("uc_prices", []), key=lambda x: x.get("position", 0))
+    if not prices:
+        return InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="❌ Narxlar yo'q", callback_data="no_prices")]])
+    ITEMS_PER_PAGE = 5
+    total_pages = (len(prices) + ITEMS_PER_PAGE - 1) // ITEMS_PER_PAGE
+    page = max(0, min(page, total_pages-1))
+    start, end = page*ITEMS_PER_PAGE, (page+1)*ITEMS_PER_PAGE
+    rows = [[InlineKeyboardButton(
+        text=f"💎 {p['uc_amount']} UC — {p['price']:,} so'm".replace(",", " "),
+        callback_data=f"buy_uc_{p['id']}_{p['uc_amount']}_{p['price']}"
+    )] for p in prices[start:end]]
+    nav = []
+    if page > 0: nav.append(InlineKeyboardButton("⬅️", callback_data=f"uc_page_{page-1}"))
+    if page < total_pages-1: nav.append(InlineKeyboardButton("➡️", callback_data=f"uc_page_{page+1}"))
+    if nav: rows.append(nav)
+    rows.append([InlineKeyboardButton("🔙 Orqaga", callback_data="uc_back")])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
 @router.message(F.text == "🎮 PUBG MOBILE UC OLISH 💎")
 async def uc_menu(message: Message, state: FSMContext):
     await state.clear()
     data = await jb_read()
-    prices = sorted(data.get("uc_prices", []), key=lambda x: x.get("position", 0))
-    text = (
-        "🎮 <b>PUBG MOBILE UC OLISH</b>\n\n"
-        "💎 Quyidagi narxlardan birini tanlang va to'lov qiling!\n"
-        "⚡️ To'lov tasdiqlangandan so'ng UC tez yuboriladi.\n\n"
-        "👇 UC miqdorini tanlang:"
-    )
-    await message.answer(text, reply_markup=get_uc_prices_keyboard_from_data(prices, 0), parse_mode="HTML")
-
-@router.callback_query(F.data == "uc_no_prices")
-async def uc_no_prices(call: CallbackQuery):
-    await call.answer("Admin hali UC narxlarini kiritmagan!", show_alert=True)
+    await message.answer("UC miqdorini tanlang:", reply_markup=get_uc_prices_keyboard(data), parse_mode="HTML")
 
 @router.callback_query(F.data.startswith("uc_page_"))
 async def uc_page_cb(call: CallbackQuery):
     page = int(call.data.split("_")[2])
     data = await jb_read()
-    prices = sorted(data.get("uc_prices", []), key=lambda x: x.get("position", 0))
-    try:
-        await call.message.edit_reply_markup(reply_markup=get_uc_prices_keyboard_from_data(prices, page))
-    except:
-        pass
-    await call.answer()
+    await call.message.edit_reply_markup(reply_markup=get_uc_prices_keyboard(data, page))
 
 @router.callback_query(F.data == "uc_back")
 async def uc_back_cb(call: CallbackQuery):
@@ -439,195 +413,100 @@ async def uc_back_cb(call: CallbackQuery):
 @router.callback_query(F.data.startswith("buy_uc_"))
 async def buy_uc_cb(call: CallbackQuery, state: FSMContext):
     parts = call.data.split("_")
-    uc_amount = int(parts[3])
-    price = int(parts[4])
-    data = await jb_read()
-    card = data.get("settings", {}).get("card", "")
-
-    await state.update_data(uc_amount=uc_amount, uc_price=price)
-
-    text = (
-        f"💎 <b>{uc_amount} UC — {price:,} so'm</b>\n\n".replace(",", " ") +
-        f"💳 <b>To'lov uchun karta:</b>\n<code>{card}</code>\n\n"
-        f"📋 <b>Buyurtma berish bosqichlari:</b>\n"
-        f"1️⃣ Yuqoridagi kartaga <b>{price:,} so'm</b> o'tkazing\n".replace(",", " ") +
-        f"2️⃣ PUBG Mobile ga kiring va <b>profil ID raqamingizni</b> kiriting\n"
-        f"3️⃣ To'lov chekini yuboring\n\n"
-        f"🔢 <b>Iltimos, PUBG ID raqamingizni kiriting:</b> "
-    )
-    await call.message.edit_text(text, parse_mode="HTML")
+    uc_id, uc_amount, price = int(parts[2]), int(parts[3]), int(parts[4])
+    await state.update_data(uc_id=uc_id, uc_amount=uc_amount, uc_price=price)
+    await call.message.edit_text("PUBG ID raqamingizni kiriting:")
     await state.set_state(UCOrderForm.pubg_screenshot)
+    await call.answer()
 
 @router.message(UCOrderForm.pubg_screenshot, F.text)
 async def get_pubg_id(message: Message, state: FSMContext):
     pubg_id = message.text
     await state.update_data(pubg_id=pubg_id)
-    data = await jb_read()
-    card = data.get("settings", {}).get("card", "")
     st = await state.get_data()
     uc_amount = st['uc_amount']
     price = st['uc_price']
-
-    text = (
-        f"✅ <b>PUBG ID qabul qilindi: <code>{pubg_id}</code></b>\n\n"
-        f"💳 Endi to'lovni amalga oshiring:\n\n"
-        f"<b>Karta raqami:</b>\n<code>{card}</code>\n\n"
-        f"<b>Summa:</b> {price:,} so'm\n\n".replace(",", " ") +
-        f"💰 To'lov qilgach, <b>to'lov cheki (skrinshot)</b>ni yuboring: "
-    )
-    await message.answer(text, parse_mode="HTML")
-    await state.set_state(UCOrderForm.receipt)
-
-@router.message(UCOrderForm.pubg_screenshot)
-async def get_pubg_id_wrong(message: Message):
-    await message.answer("❗️ Iltimos, PUBG ID raqamingizni kiriting!", parse_mode="HTML")
-
-@router.message(UCOrderForm.receipt, F.photo)
-async def get_uc_receipt(message: Message, state: FSMContext):
-    st = await state.get_data()
-    receipt_id = message.photo[-1].file_id
-    pubg_id = st.get('pubg_id', '—')
-    uc_amount = st['uc_amount']
-    price = st['uc_price']
-    now = get_time_tashkent()
     data = await jb_read()
+
+    # Create order in db
     order_id = get_next_id(data)
-    orders = data.get("uc_orders", [])
-    orders.append({
+    uc_order = {
         "id": order_id,
         "user_id": message.from_user.id,
         "full_name": message.from_user.full_name,
-        "username": message.from_user.username or "—",
+        "username": message.from_user.username or "",
         "uc_amount": uc_amount,
         "price": price,
         "pubg_id": pubg_id,
-        "screenshot_id": receipt_id,
         "status": "pending",
-        "order_date": now
-    })
-    data["uc_orders"] = orders
+        "order_date": get_time_tashkent()
+    }
+    data["uc_orders"].append(uc_order)
+
+    # Payment record
+    payment_order = {
+        "id": get_next_id(data),
+        "order_id": order_id,
+        "user_id": message.from_user.id,
+        "type": "UC",
+        "amount": price,
+        "status": "pending",
+        "created_at": get_time_tashkent()
+    }
+    data["payment_orders"].append(payment_order)
     await jb_write(data)
 
-    admin_text = (
-        f"🛒 <b>YANGI UC BUYURTMA!</b>\n\n"
-        f"👤 Foydalanuvchi: {message.from_user.full_name}\n"
-        f"🔗 Username: @{message.from_user.username or '—'}\n"
-        f"🆔 Telegram ID: <code>{message.from_user.id}</code>\n\n"
-        f"💎 UC miqdori: <b>{uc_amount} UC</b>\n"
-        f"💰 To'lov summasi: <b>{price:,} so'm</b>\n\n".replace(",", " ") +
-        f"🎮 PUBG ID: <code>{pubg_id}</code>\n"
-        f"📅 Vaqt: <b>{now}</b> (Toshkent) "
-    )
-
-    btn = InlineKeyboardMarkup(inline_keyboard=[[
-        InlineKeyboardButton(text="✅ Tasdiqlash", callback_data=f"uc_approve_{message.from_user.id}_{order_id}"),
-        InlineKeyboardButton(text="❌ Bekor qilish", callback_data=f"uc_reject_{message.from_user.id}_{order_id}")
-    ]])
-
-    await bot.send_photo(ADMIN_ID, photo=receipt_id, caption=admin_text, parse_mode="HTML", reply_markup=btn)
-    await message.answer(
-        f"✅ <b>Buyurtmangiz qabul qilindi!</b>\n\n"
-        f"💎 <b>{uc_amount} UC</b> — {price:,} so'm\n\n".replace(",", " ") +
-        f"⏳ Admin chekni ko'rib chiqib, UC ni tez orada yuboradi.\n"
-        f"📞 Savollar bo'lsa: 🆘 Yordam tugmasini bosing. ",
-        parse_mode="HTML", reply_markup=get_main_menu()
-    )
+    payment_url = await create_checkout_payment(price, f"UC {order_id}", order_id, message.from_user.id)
+    if payment_url:
+        btn = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="💳 To'lov qilish", url=payment_url)],
+            [InlineKeyboardButton(text="🔄 Tekshirish", callback_data=f"check_payment_{order_id}")]
+        ])
+        await message.answer(
+            f"💎 <b>{uc_amount} UC — {price:,} so'm</b>\n\n"
+            f"To'lovni quyidagi tugma orqali amalga oshiring:\n"
+            f"To'lovdan keyin admin tasdiqlaydi va UC yuboriladi.",
+            reply_markup=btn, parse_mode="HTML"
+        )
+    else:
+        await message.answer("❌ To'lov tizimida xatolik. Keyinroq urinib ko'ring.")
     await state.clear()
 
-@router.message(UCOrderForm.receipt)
-async def get_uc_receipt_wrong(message: Message):
-    await message.answer("❗️ Iltimos, to'lov cheki rasmini yuboring!", parse_mode="HTML")
+@router.message(UCOrderForm.pubg_screenshot)
+async def pubg_id_wrong(message: Message):
+    await message.answer("Iltimos, PUBG ID raqamingizni yuboring.")
 
-# ================== ADMIN UC TASDIQLASH ==================
-@router.callback_query(F.data.startswith("uc_approve_"))
-async def uc_approve_cb(call: CallbackQuery):
-    if call.from_user.id != ADMIN_ID:
-        await call.answer("Sizda ruxsat yo'q!", show_alert=True)
-        return
-    parts = call.data.split("_")
-    user_id = int(parts[2])
-    order_id = int(parts[3])
-    data = await jb_read()
-    orders = data.get("uc_orders", [])
-    order = next((o for o in orders if o["id"] == order_id), None)
-    if order:
-        order["status"] = "approved"
-        data["uc_orders"] = orders
-        await jb_write(data)
-        await bot.send_message(
-            user_id,
-            f"🎉 <b>Tabriklaymiz! UC profilingizga tushdi!</b>\n\n"
-            f"💎 <b>{order['uc_amount']} UC</b> akkauntingizga yuborildi!\n"
-            f"O'yiningizni oching va UC ni tekshiring.\n\n"
-            f"🙏 Xarid uchun rahmat! ",
-            parse_mode="HTML", reply_markup=get_main_menu()
-        )
+# ================== STARS OLISH ==================
+def get_stars_prices_keyboard(data, page=0):
+    prices = sorted(data.get("stars_prices", []), key=lambda x: x.get("position", 0))
+    if not prices:
+        return InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="❌ Narxlar yo'q", callback_data="no_prices")]])
+    ITEMS_PER_PAGE = 5
+    total_pages = (len(prices) + ITEMS_PER_PAGE - 1) // ITEMS_PER_PAGE
+    page = max(0, min(page, total_pages-1))
+    start, end = page*ITEMS_PER_PAGE, (page+1)*ITEMS_PER_PAGE
+    rows = [[InlineKeyboardButton(
+        text=f"⭐ {p['stars_amount']} Stars — {p['price']:,} so'm".replace(",", " "),
+        callback_data=f"buy_stars_{p['id']}_{p['stars_amount']}_{p['price']}"
+    )] for p in prices[start:end]]
+    nav = []
+    if page > 0: nav.append(InlineKeyboardButton("⬅️", callback_data=f"stars_page_{page-1}"))
+    if page < total_pages-1: nav.append(InlineKeyboardButton("➡️", callback_data=f"stars_page_{page+1}"))
+    if nav: rows.append(nav)
+    rows.append([InlineKeyboardButton("🔙 Orqaga", callback_data="stars_back")])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
 
-    caption = call.message.caption or ""
-    try:
-        await call.message.edit_caption(caption=caption + "\n\n✅ TASDIQLANDI — UC YUBORILDI", reply_markup=None)
-    except:
-        pass
-    await call.answer("✅ Buyurtma tasdiqlandi! ", show_alert=True)
-
-@router.callback_query(F.data.startswith("uc_reject_"))
-async def uc_reject_cb(call: CallbackQuery):
-    if call.from_user.id != ADMIN_ID:
-        await call.answer("Sizda ruxsat yo'q!", show_alert=True)
-        return
-    parts = call.data.split("_")
-    user_id = int(parts[2])
-    order_id = int(parts[3])
-    data = await jb_read()
-    orders = data.get("uc_orders", [])
-    order = next((o for o in orders if o["id"] == order_id), None)
-    if order:
-        order["status"] = "rejected"
-        data["uc_orders"] = orders
-        await jb_write(data)
-
-    await bot.send_message(
-        user_id,
-        "❌ <b>Buyurtmangiz bekor qilindi.</b>\n\n"
-        "To'lov cheki tasdiqlanmadi. Iltimos, qayta urinib ko'ring yoki "
-        "🆘 Yordam orqali admin bilan bog'laning. ",
-        parse_mode="HTML", reply_markup=get_main_menu()
-    )
-    caption = call.message.caption or ""
-    try:
-        await call.message.edit_caption(caption=caption + "\n\n❌ BEKOR QILINDI", reply_markup=None)
-    except:
-        pass
-    await call.answer("❌ Buyurtma bekor qilindi. ", show_alert=True)
-
-# ================== 🌟 STARS OLISH ==================
 @router.message(F.text == "🌟 STARS OLISH")
 async def stars_menu(message: Message, state: FSMContext):
     await state.clear()
     data = await jb_read()
-    prices = sorted(data.get("stars_prices", []), key=lambda x: x.get("position", 0))
-    text = (
-        "🌟 <b>TELEGRAM STARS OLISH</b>\n\n"
-        "⭐ Quyidagi miqdorlardan birini tanlang!\n"
-        "⚡️ To'lov tasdiqlangandan so'ng Stars tez yuboriladi.\n\n"
-        "👇 Stars miqdorini tanlang:"
-    )
-    await message.answer(text, reply_markup=get_stars_prices_keyboard_from_data(prices, 0), parse_mode="HTML")
-
-@router.callback_query(F.data == "stars_no_prices")
-async def stars_no_prices(call: CallbackQuery):
-    await call.answer("Admin hali Stars narxlarini kiritmagan!", show_alert=True)
+    await message.answer("Stars miqdorini tanlang:", reply_markup=get_stars_prices_keyboard(data), parse_mode="HTML")
 
 @router.callback_query(F.data.startswith("stars_page_"))
 async def stars_page_cb(call: CallbackQuery):
     page = int(call.data.split("_")[2])
     data = await jb_read()
-    prices = sorted(data.get("stars_prices", []), key=lambda x: x.get("position", 0))
-    try:
-        await call.message.edit_reply_markup(reply_markup=get_stars_prices_keyboard_from_data(prices, page))
-    except:
-        pass
-    await call.answer()
+    await call.message.edit_reply_markup(reply_markup=get_stars_prices_keyboard(data, page))
 
 @router.callback_query(F.data == "stars_back")
 async def stars_back_cb(call: CallbackQuery):
@@ -637,47 +516,24 @@ async def stars_back_cb(call: CallbackQuery):
 @router.callback_query(F.data.startswith("buy_stars_"))
 async def buy_stars_cb(call: CallbackQuery, state: FSMContext):
     parts = call.data.split("_")
-    stars_amount = int(parts[3])
-    price = int(parts[4])
-    await state.update_data(stars_amount=stars_amount, stars_price=price)
-
-    btn = InlineKeyboardMarkup(inline_keyboard=[[
-        InlineKeyboardButton(text="👤 O'ZIMGA", callback_data="stars_target_me"),
-        InlineKeyboardButton(text="👫 DO'STIMGA", callback_data="stars_target_friend"),
-    ]])
-
-    await call.message.edit_text(
-        f"⭐ <b>{stars_amount} Stars — {price:,} so'm</b>\n\nStars kimga kerak? ".replace(",", " "),
-        reply_markup=btn, parse_mode="HTML"
-    )
+    stars_id, stars_amount, price = int(parts[2]), int(parts[3]), int(parts[4])
+    await state.update_data(stars_id=stars_id, stars_amount=stars_amount, stars_price=price)
+    btn = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="👤 O'zimga", callback_data="stars_target_me")],
+        [InlineKeyboardButton(text="👫 Do'stimga", callback_data="stars_target_friend")]
+    ])
+    await call.message.edit_text("Stars kimga kerak?", reply_markup=btn)
     await state.set_state(StarsOrderForm.choose_target)
     await call.answer()
 
 @router.callback_query(F.data == "stars_target_me", StarsOrderForm.choose_target)
 async def stars_target_me(call: CallbackQuery, state: FSMContext):
-    st = await state.get_data()
-    stars_amount = st['stars_amount']
-    price = st['stars_price']
-    data = await jb_read()
-    card = data.get("settings", {}).get("card", "")
     await state.update_data(target_type="me", target_username=call.from_user.username or str(call.from_user.id))
-
-    text = (
-        f"⭐ <b>{stars_amount} Stars — {price:,} so'm</b>\n\n".replace(",", " ") +
-        f"💳 <b>To'lov uchun karta:</b>\n<code>{card}</code>\n\n"
-        f"<b>Summa:</b> {price:,} so'm\n\n".replace(",", " ") +
-        f"💰 To'lov qilgach, <b>to'lov cheki (skrinshot)</b>ni yuboring: "
-    )
-    await call.message.edit_text(text, parse_mode="HTML")
-    await state.set_state(StarsOrderForm.receipt)
-    await call.answer()
+    await ask_stars_payment(call, state)
 
 @router.callback_query(F.data == "stars_target_friend", StarsOrderForm.choose_target)
 async def stars_target_friend(call: CallbackQuery, state: FSMContext):
-    await call.message.edit_text(
-        "👫 Do'stingizning Telegram username'ini kiriting:\n\nMasalan: `@username`",
-        parse_mode="HTML"
-    )
+    await call.message.edit_text("Do'stingizning Telegram username'ini kiriting (masalan: @username):")
     await state.set_state(StarsOrderForm.friend_username)
     await call.answer()
 
@@ -685,173 +541,90 @@ async def stars_target_friend(call: CallbackQuery, state: FSMContext):
 async def get_stars_friend_username(message: Message, state: FSMContext):
     username = message.text.strip().lstrip("@")
     await state.update_data(target_type="friend", target_username=username)
+    await ask_stars_payment(message, state)
+
+async def ask_stars_payment(event, state: FSMContext):
     st = await state.get_data()
     stars_amount = st['stars_amount']
     price = st['stars_price']
+    target_type = st['target_type']
+    target_username = st['target_username']
     data = await jb_read()
-    card = data.get("settings", {}).get("card", "")
 
-    text = (
-        f"⭐ <b>{stars_amount} Stars — {price:,} so'm</b>\n\n".replace(",", " ") +
-        f"👫 Do'st username: <code>@{username}</code>\n\n"
-        f"💳 <b>To'lov uchun karta:</b>\n<code>{card}</code>\n\n"
-        f"<b>Summa:</b> {price:,} so'm\n\n".replace(",", " ") +
-        f"💰 To'lov qilgach, <b>to'lov cheki (skrinshot)</b>ni yuboring: "
-    )
-    await message.answer(text, parse_mode="HTML")
-    await state.set_state(StarsOrderForm.receipt)
-
-@router.message(StarsOrderForm.receipt, F.photo)
-async def get_stars_receipt(message: Message, state: FSMContext):
-    st = await state.get_data()
-    receipt_id = message.photo[-1].file_id
-    stars_amount = st['stars_amount']
-    price = st['stars_price']
-    target_type = st.get('target_type', 'me')
-    target_username = st.get('target_username', '—')
-    now = get_time_tashkent()
-    data = await jb_read()
     order_id = get_next_id(data)
-    orders = data.get("stars_orders", [])
-    orders.append({
+    stars_order = {
         "id": order_id,
-        "user_id": message.from_user.id,
-        "full_name": message.from_user.full_name,
-        "username": message.from_user.username or "—",
+        "user_id": event.from_user.id,
+        "full_name": event.from_user.full_name,
+        "username": event.from_user.username or "",
         "stars_amount": stars_amount,
         "price": price,
         "target_type": target_type,
         "target_username": target_username,
-        "receipt_id": receipt_id,
         "status": "pending",
-        "order_date": now
-    })
-    data["stars_orders"] = orders
+        "order_date": get_time_tashkent()
+    }
+    data["stars_orders"].append(stars_order)
+
+    payment_order = {
+        "id": get_next_id(data),
+        "order_id": order_id,
+        "user_id": event.from_user.id,
+        "type": "Stars",
+        "amount": price,
+        "status": "pending",
+        "created_at": get_time_tashkent()
+    }
+    data["payment_orders"].append(payment_order)
     await jb_write(data)
 
-    target_text = f"O'ziga (@{target_username})" if target_type == "me" else f"Do'stiga (@{target_username})"
-
-    admin_text = (
-        f"⭐ <b>YANGI STARS BUYURTMA!</b>\n\n"
-        f"👤 Foydalanuvchi: {message.from_user.full_name}\n"
-        f"🔗 Username: @{message.from_user.username or '—'}\n"
-        f"🆔 Telegram ID: <code>{message.from_user.id}</code>\n\n"
-        f"⭐ Stars miqdori: <b>{stars_amount} Stars</b>\n"
-        f"💰 To'lov summasi: <b>{price:,} so'm</b>\n\n".replace(",", " ") +
-        f"🎯 Kimga: <b>{target_text}</b>\n"
-        f"📅 Vaqt: <b>{now}</b> (Toshkent) "
-    )
-
-    btn = InlineKeyboardMarkup(inline_keyboard=[
-        [
-            InlineKeyboardButton(text="✅ Tasdiqlash", callback_data=f"stars_approve_{message.from_user.id}_{order_id}"),
-            InlineKeyboardButton(text="❌ Bekor qilish", callback_data=f"stars_reject_{message.from_user.id}_{order_id}"),
-        ],
-        [InlineKeyboardButton(text="👤 Foydalanuvchiga o'tish", url=f"tg://user?id={message.from_user.id}")]
-    ])
-
-    await bot.send_photo(ADMIN_ID, photo=receipt_id, caption=admin_text, parse_mode="HTML", reply_markup=btn)
-    await message.answer(
-        f"✅ <b>Buyurtmangiz qabul qilindi!</b>\n\n"
-        f"⭐ <b>{stars_amount} Stars</b> — {price:,} so'm\n\n".replace(",", " ") +
-        f"⏳ Admin chekni ko'rib chiqadi va Stars tez orada yuboriladi.\n"
-        f"📞 Savollar bo'lsa: 🆘 Yordam tugmasini bosing. ",
-        parse_mode="HTML", reply_markup=get_main_menu()
-    )
+    payment_url = await create_checkout_payment(price, f"Stars {order_id}", order_id, event.from_user.id)
+    if payment_url:
+        btn = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="💳 To'lov qilish", url=payment_url)],
+            [InlineKeyboardButton(text="🔄 Tekshirish", callback_data=f"check_payment_{order_id}")]
+        ])
+        await event.message.answer(
+            f"⭐ <b>{stars_amount} Stars — {price:,} so'm</b>\n"
+            f"👤 Kimga: {target_username}\n\n"
+            f"To'lovni quyidagi tugma orqali amalga oshiring:",
+            reply_markup=btn, parse_mode="HTML"
+        )
+    else:
+        await event.message.answer("❌ To'lov tizimida xatolik.")
     await state.clear()
 
-@router.message(StarsOrderForm.receipt)
-async def get_stars_receipt_wrong(message: Message):
-    await message.answer("❗️ Iltimos, to'lov cheki rasmini yuboring!", parse_mode="HTML")
+# ================== TELEGRAM PREMIUM ==================
+def get_premium_prices_keyboard(data, page=0):
+    prices = sorted(data.get("premium_prices", []), key=lambda x: x.get("price", 0))
+    if not prices:
+        return InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="❌ Narxlar yo'q", callback_data="no_prices")]])
+    ITEMS_PER_PAGE = 5
+    total_pages = (len(prices) + ITEMS_PER_PAGE - 1) // ITEMS_PER_PAGE
+    page = max(0, min(page, total_pages-1))
+    start, end = page*ITEMS_PER_PAGE, (page+1)*ITEMS_PER_PAGE
+    rows = [[InlineKeyboardButton(
+        text=f"⭐ {p['duration']} — {p['price']:,} so'm".replace(",", " "),
+        callback_data=f"buy_premium_{p['id']}_{p['price']}"
+    )] for p in prices[start:end]]
+    nav = []
+    if page > 0: nav.append(InlineKeyboardButton("⬅️", callback_data=f"premium_page_{page-1}"))
+    if page < total_pages-1: nav.append(InlineKeyboardButton("➡️", callback_data=f"premium_page_{page+1}"))
+    if nav: rows.append(nav)
+    rows.append([InlineKeyboardButton("🔙 Orqaga", callback_data="premium_back")])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
 
-# ================== ADMIN STARS TASDIQLASH ==================
-@router.callback_query(F.data.startswith("stars_approve_"))
-async def stars_approve_cb(call: CallbackQuery):
-    if call.from_user.id != ADMIN_ID:
-        await call.answer("Sizda ruxsat yo'q!", show_alert=True)
-        return
-    parts = call.data.split("_")
-    user_id = int(parts[2])
-    order_id = int(parts[3])
-    data = await jb_read()
-    orders = data.get("stars_orders", [])
-    order = next((o for o in orders if o["id"] == order_id), None)
-    if order:
-        order["status"] = "approved"
-        data["stars_orders"] = orders
-        await jb_write(data)
-        await bot.send_message(
-            user_id,
-            f"🎉 <b>Tabriklaymiz! Stars profilingizga tushdi!</b>\n\n"
-            f"⭐ <b>{order['stars_amount']} Stars</b> yuborildi!\n\n"
-            f"🙏 Xarid uchun rahmat! ",
-            parse_mode="HTML", reply_markup=get_main_menu()
-        )
-
-    caption = call.message.caption or ""
-    try:
-        await call.message.edit_caption(caption=caption + "\n\n✅ TASDIQLANDI — STARS YUBORILDI", reply_markup=None)
-    except:
-        pass
-    await call.answer("✅ Stars buyurtma tasdiqlandi! ", show_alert=True)
-
-@router.callback_query(F.data.startswith("stars_reject_"))
-async def stars_reject_cb(call: CallbackQuery):
-    if call.from_user.id != ADMIN_ID:
-        await call.answer("Sizda ruxsat yo'q!", show_alert=True)
-        return
-    parts = call.data.split("_")
-    user_id = int(parts[2])
-    order_id = int(parts[3])
-    data = await jb_read()
-    orders = data.get("stars_orders", [])
-    order = next((o for o in orders if o["id"] == order_id), None)
-    if order:
-        order["status"] = "rejected"
-        data["stars_orders"] = orders
-        await jb_write(data)
-
-    await bot.send_message(
-        user_id,
-        "❌ <b>Buyurtmangiz bekor qilindi.</b>\n\n"
-        "🆘 Yordam orqali admin bilan bog'laning. ",
-        parse_mode="HTML", reply_markup=get_main_menu()
-    )
-    caption = call.message.caption or ""
-    try:
-        await call.message.edit_caption(caption=caption + "\n\n❌ BEKOR QILINDI", reply_markup=None)
-    except:
-        pass
-    await call.answer("❌ Stars buyurtma bekor qilindi. ", show_alert=True)
-
-# ================== ⭐ TELEGRAM PREMIUM ==================
 @router.message(F.text == "⭐ TELEGRAM PREMIUM")
 async def premium_menu(message: Message, state: FSMContext):
     await state.clear()
     data = await jb_read()
-    prices = sorted(data.get("premium_prices", []), key=lambda x: x.get("price", 0))
-    text = (
-        "⭐ <b>TELEGRAM PREMIUM OLISH</b>\n\n"
-        "🚀 Premium obuna bilan Telegram'ni to'liq imkoniyatlaridan foydalaning!\n"
-        "⚡️ To'lov tasdiqlangandan so'ng Premium tez ulanadi.\n\n"
-        "👇 Muddat tanlang:"
-    )
-    await message.answer(text, reply_markup=get_premium_prices_keyboard_from_data(prices, 0), parse_mode="HTML")
-
-@router.callback_query(F.data == "premium_no_prices")
-async def premium_no_prices(call: CallbackQuery):
-    await call.answer("Admin hali Premium narxlarini kiritmagan!", show_alert=True)
+    await message.answer("Premium muddatini tanlang:", reply_markup=get_premium_prices_keyboard(data), parse_mode="HTML")
 
 @router.callback_query(F.data.startswith("premium_page_"))
 async def premium_page_cb(call: CallbackQuery):
     page = int(call.data.split("_")[2])
     data = await jb_read()
-    prices = sorted(data.get("premium_prices", []), key=lambda x: x.get("price", 0))
-    try:
-        await call.message.edit_reply_markup(reply_markup=get_premium_prices_keyboard_from_data(prices, page))
-    except:
-        pass
-    await call.answer()
+    await call.message.edit_reply_markup(reply_markup=get_premium_prices_keyboard(data, page))
 
 @router.callback_query(F.data == "premium_back")
 async def premium_back_cb(call: CallbackQuery):
@@ -864,17 +637,13 @@ async def buy_premium_cb(call: CallbackQuery, state: FSMContext):
     pid = int(parts[2])
     price = int(parts[3])
     data = await jb_read()
-    prices = data.get("premium_prices", [])
-    row = next((p for p in prices if p["id"] == pid), None)
-    duration = row["duration"] if row else "Noma'lum"
-
+    premium_item = next((p for p in data.get("premium_prices", []) if p["id"] == pid), None)
+    if not premium_item:
+        await call.answer("Xatolik!")
+        return
+    duration = premium_item["duration"]
     await state.update_data(premium_pid=pid, premium_price=price, premium_duration=duration)
-
-    await call.message.edit_text(
-        f"⭐ <b>{duration} — {price:,} so'm</b>\n\n".replace(",", " ") +
-        f"Premium tushirilsinchi profil username'ini yuboring:\n\nMasalan: <code>@username</code> ",
-        parse_mode="HTML"
-    )
+    await call.message.edit_text("Premium tushiriladigan profil username'ini yuboring (masalan: @username):")
     await state.set_state(PremiumOrderForm.target_username)
     await call.answer()
 
@@ -886,167 +655,63 @@ async def get_premium_username(message: Message, state: FSMContext):
     price = st['premium_price']
     duration = st['premium_duration']
     data = await jb_read()
-    card = data.get("settings", {}).get("card", "")
 
-    text = (
-        f"⭐ <b>{duration} — {price:,} so'm</b>\n\n".replace(",", " ") +
-        f"👤 Premium tushiriladigan profil: <code>@{username}</code>\n\n"
-        f"💳 <b>To'lov uchun karta:</b>\n<code>{card}</code>\n\n"
-        f"<b>Summa:</b> {price:,} so'm\n\n".replace(",", " ") +
-        f"💰 To'lov qilgach, <b>to'lov cheki (skrinshot)</b>ni yuboring: "
-    )
-    await message.answer(text, parse_mode="HTML")
-    await state.set_state(PremiumOrderForm.receipt)
-
-@router.message(PremiumOrderForm.receipt, F.photo)
-async def get_premium_receipt(message: Message, state: FSMContext):
-    st = await state.get_data()
-    receipt_id = message.photo[-1].file_id
-    price = st['premium_price']
-    duration = st['premium_duration']
-    target_username = st.get('target_username', '—')
-    now = get_time_tashkent()
-    data = await jb_read()
     order_id = get_next_id(data)
-    orders = data.get("premium_orders", [])
-    orders.append({
+    premium_order = {
         "id": order_id,
         "user_id": message.from_user.id,
         "full_name": message.from_user.full_name,
-        "username": message.from_user.username or "—",
+        "username": message.from_user.username or "",
         "duration": duration,
         "price": price,
-        "target_username": target_username,
-        "receipt_id": receipt_id,
+        "target_username": username,
         "status": "pending",
-        "order_date": now
-    })
-    data["premium_orders"] = orders
+        "order_date": get_time_tashkent()
+    }
+    data["premium_orders"].append(premium_order)
+
+    payment_order = {
+        "id": get_next_id(data),
+        "order_id": order_id,
+        "user_id": message.from_user.id,
+        "type": "Premium",
+        "amount": price,
+        "status": "pending",
+        "created_at": get_time_tashkent()
+    }
+    data["payment_orders"].append(payment_order)
     await jb_write(data)
 
-    admin_text = (
-        f"⭐ <b>YANGI PREMIUM BUYURTMA!</b>\n\n"
-        f"👤 Foydalanuvchi: {message.from_user.full_name}\n"
-        f"🔗 Username: @{message.from_user.username or '—'}\n"
-        f"🆔 Telegram ID: <code>{message.from_user.id}</code>\n\n"
-        f"⭐ Premium muddati: <b>{duration}</b>\n"
-        f"💰 To'lov summasi: <b>{price:,} so'm</b>\n\n".replace(",", " ") +
-        f"🎯 Premium tushiriladigan profil: <code>@{target_username}</code>\n"
-        f"📅 Vaqt: <b>{now}</b> (Toshkent) "
-    )
-
-    btn = InlineKeyboardMarkup(inline_keyboard=[
-        [
-            InlineKeyboardButton(text="✅ Tasdiqlash", callback_data=f"premium_approve_{message.from_user.id}_{order_id}"),
-            InlineKeyboardButton(text="❌ Bekor qilish", callback_data=f"premium_reject_{message.from_user.id}_{order_id}"),
-        ],
-        [InlineKeyboardButton(text="👤 Foydalanuvchiga o'tish", url=f"tg://user?id={message.from_user.id}")]
-    ])
-
-    await bot.send_photo(ADMIN_ID, photo=receipt_id, caption=admin_text, parse_mode="HTML", reply_markup=btn)
-    await message.answer(
-        f"✅ <b>Buyurtmangiz qabul qilindi!</b>\n\n"
-        f"⭐ <b>{duration}</b> Telegram Premium\n"
-        f"💰 {price:,} so'm\n\n".replace(",", " ") +
-        f"⏳ Admin chekni ko'rib chiqadi va Premium tez orada ulanadi.\n"
-        f"📞 Savollar bo'lsa: 🆘 Yordam tugmasini bosing. ",
-        parse_mode="HTML", reply_markup=get_main_menu()
-    )
-    await state.clear()
-
-@router.message(PremiumOrderForm.receipt)
-async def get_premium_receipt_wrong(message: Message):
-    await message.answer("❗️ Iltimos, to'lov cheki rasmini yuboring!", parse_mode="HTML")
-
-# ================== ADMIN PREMIUM TASDIQLASH ==================
-@router.callback_query(F.data.startswith("premium_approve_"))
-async def premium_approve_cb(call: CallbackQuery):
-    if call.from_user.id != ADMIN_ID:
-        await call.answer("Sizda ruxsat yo'q!", show_alert=True)
-        return
-    parts = call.data.split("_")
-    user_id = int(parts[2])
-    order_id = int(parts[3])
-    data = await jb_read()
-    orders = data.get("premium_orders", [])
-    order = next((o for o in orders if o["id"] == order_id), None)
-    if order:
-        order["status"] = "approved"
-        data["premium_orders"] = orders
-        await jb_write(data)
-        await bot.send_message(
-            user_id,
-            f"🎉 <b>Tabriklaymiz! Telegram Premium faollashtirildi!</b>\n\n"
-            f"⭐ <b>{order['duration']}</b> Premium profilingizga ulandi!\n\n"
-            f"🙏 Xarid uchun rahmat! ",
-            parse_mode="HTML", reply_markup=get_main_menu()
+    payment_url = await create_checkout_payment(price, f"Premium {order_id}", order_id, message.from_user.id)
+    if payment_url:
+        btn = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="💳 To'lov qilish", url=payment_url)],
+            [InlineKeyboardButton(text="🔄 Tekshirish", callback_data=f"check_payment_{order_id}")]
+        ])
+        await message.answer(
+            f"⭐ <b>{duration} — {price:,} so'm</b>\n"
+            f"👤 Premium tushiriladigan profil: @{username}\n\n"
+            f"To'lovni quyidagi tugma orqali amalga oshiring:",
+            reply_markup=btn, parse_mode="HTML"
         )
-
-    caption = call.message.caption or ""
-    try:
-        await call.message.edit_caption(caption=caption + "\n\n✅ TASDIQLANDI — PREMIUM ULANDI", reply_markup=None)
-    except:
-        pass
-    await call.answer("✅ Premium buyurtma tasdiqlandi! ", show_alert=True)
-
-@router.callback_query(F.data.startswith("premium_reject_"))
-async def premium_reject_cb(call: CallbackQuery):
-    if call.from_user.id != ADMIN_ID:
-        await call.answer("Sizda ruxsat yo'q!", show_alert=True)
-        return
-    parts = call.data.split("_")
-    user_id = int(parts[2])
-    order_id = int(parts[3])
-    data = await jb_read()
-    orders = data.get("premium_orders", [])
-    order = next((o for o in orders if o["id"] == order_id), None)
-    if order:
-        order["status"] = "rejected"
-        data["premium_orders"] = orders
-        await jb_write(data)
-
-    await bot.send_message(
-        user_id,
-        "❌ <b>Buyurtmangiz bekor qilindi.</b>\n\n"
-        "🆘 Yordam orqali admin bilan bog'laning. ",
-        parse_mode="HTML", reply_markup=get_main_menu()
-    )
-    caption = call.message.caption or ""
-    try:
-        await call.message.edit_caption(caption=caption + "\n\n❌ BEKOR QILINDI", reply_markup=None)
-    except:
-        pass
-    await call.answer("❌ Premium buyurtma bekor qilindi. ", show_alert=True)
-
-# ================== TO'LOV ==================
-@router.callback_query(F.data == "pay_ad")
-async def pay_ad_cb(call: CallbackQuery, state: FSMContext):
-    data = await jb_read()
-    card = data.get("settings", {}).get("card", "")
-    price = data.get("settings", {}).get("price", "50000")
-    await call.message.edit_text(
-        f"💳 To'lov uchun karta raqam:\n\n`{card}`\nSumma: {price} so'm\n\n"
-        f"To'lov qilgach, chekni rasm (skrinshot) qilib yuboring. ",
-        parse_mode="Markdown"
-    )
-    await state.set_state(PaymentForm.receipt)
-
-@router.message(PaymentForm.receipt, F.photo)
-async def get_receipt(message: Message, state: FSMContext):
-    photo_id = message.photo[-1].file_id
-    btn = InlineKeyboardMarkup(inline_keyboard=[[
-        InlineKeyboardButton(text="✅ Tasdiqlash", callback_data=f"app_pay_{message.from_user.id}"),
-        InlineKeyboardButton(text="❌ Bekor qilish", callback_data=f"rej_pay_{message.from_user.id}")
-    ]])
-    await bot.send_photo(ADMIN_ID, photo_id,
-        caption=f"💰 Yangi to'lov cheki.\n"
-        f"Foydalanuvchi: {message.from_user.full_name} (@{message.from_user.username})\n"
-        f"ID: {message.from_user.id} ",
-        reply_markup=btn)
-    await message.answer("Chek adminga yuborildi. Tasdiqlanishini kuting. ", reply_markup=get_main_menu())
+    else:
+        await message.answer("❌ To'lov tizimida xatolik.")
     await state.clear()
 
-# ================== E'LON BERISH ==================
+# ================== PAYMENT CHECK CALLBACK ==================
+@router.callback_query(F.data.startswith("check_payment_"))
+async def check_payment_cb(call: CallbackQuery):
+    order_id = int(call.data.split("_")[2])
+    data = await jb_read()
+    payment_orders = data.get("payment_orders", [])
+    payment = next((p for p in payment_orders if p["order_id"] == order_id), None)
+    if payment and payment["status"] == "paid":
+        await call.answer("✅ To'lov tasdiqlangan!", show_alert=True)
+        await call.message.delete()
+    else:
+        await call.answer("⏳ To'lov hali tasdiqlanmagan. Iltimos, birozdan keyin tekshiring.", show_alert=True)
+
+# ================== E'LON BERISH (AD FORM) ==================
 @router.message(AdForm.video, F.video)
 async def get_video(message: Message, state: FSMContext):
     await state.update_data(video=message.video.file_id)
@@ -1101,7 +766,7 @@ async def get_phone(message: Message, state: FSMContext):
         f"🏆 RP: {st.get('rp')}\n"
         f"🚗 Mashinalar: {st.get('cars')}\n"
         f"💰 Narx: {st.get('price')} so'm\n"
-        f"📞 Telefon: {st.get('phone')} "
+        f"📞 Telefon: {st.get('phone')}"
     )
 
     data = await jb_read()
@@ -1124,10 +789,10 @@ async def get_phone(message: Message, state: FSMContext):
     data["users"] = users
     await jb_write(data)
 
-    btn = InlineKeyboardMarkup(inline_keyboard=[[
-        InlineKeyboardButton(text="✅ Tasdiqlash", callback_data=f"app_ad_{ad_id}"),
-        InlineKeyboardButton(text="❌ Bekor qilish", callback_data=f"rej_ad_{ad_id}")
-    ]])
+    btn = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="✅ Tasdiqlash", callback_data=f"app_ad_{ad_id}"),
+         InlineKeyboardButton(text="❌ Bekor qilish", callback_data=f"rej_ad_{ad_id}")]
+    ])
 
     try:
         await bot.send_video(ADMIN_ID, video=st.get('video'),
@@ -1136,144 +801,15 @@ async def get_phone(message: Message, state: FSMContext):
     except:
         pass
 
-    await message.answer("✅ E'loningiz adminga yuborildi. Tasdiqlanishini kuting. ", reply_markup=get_main_menu())
+    await message.answer("✅ E'loningiz adminga yuborildi. Tasdiqlanishini kuting.", reply_markup=get_main_menu())
     await state.clear()
 
 # ================== SUPPORT ==================
 @router.message(SupportForm.msg)
 async def get_support_msg(message: Message, state: FSMContext):
-    btn = InlineKeyboardMarkup(inline_keyboard=[[
-        InlineKeyboardButton(text="💬 Javob berish", callback_data=f"reply_{message.from_user.id}")
-    ]])
-    await bot.send_message(ADMIN_ID,
-        f"📩 Yangi xabar!\n"
-        f"Kimdan: {message.from_user.full_name} (ID: {message.from_user.id})\n\n"
-        f"Xabar: {message.text}",
-        reply_markup=btn)
+    btn = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="💬 Javob berish", callback_data=f"reply_{message.from_user.id}")]])
+    await bot.send_message(ADMIN_ID, f"📩 Yangi xabar!\nKimdan: {message.from_user.full_name} (ID: {message.from_user.id})\n\nXabar: {message.text}", reply_markup=btn)
     await message.answer("Xabaringiz adminga yetkazildi.", reply_markup=get_main_menu())
-    await state.clear()
-
-# ================== ADMIN TO'LOV ==================
-@router.callback_query(F.data.startswith("app_pay_"))
-async def approve_pay(call: CallbackQuery):
-    user_id = int(call.data.split("_")[2])
-    data = await jb_read()
-    users = data.get("users", [])
-    for u in users:
-        if u["user_id"] == user_id:
-            u["paid_slots"] = u.get("paid_slots", 0) + 1
-            break
-    data["users"] = users
-    await jb_write(data)
-    await bot.send_message(user_id, "✅ To'lovingiz admin tomonidan tasdiqlandi!\nEndi yana e'lon joylashingiz mumkin. ", reply_markup=get_main_menu())
-    await call.message.edit_caption(caption=call.message.caption + "\n\n✅ TASDIQLANGAN")
-
-@router.callback_query(F.data.startswith("rej_pay_"))
-async def reject_pay(call: CallbackQuery):
-    user_id = int(call.data.split("_")[2])
-    await bot.send_message(user_id, "❌ To'lovingiz admin tomonidan bekor qilindi.", reply_markup=get_main_menu())
-    await call.message.edit_caption(caption=call.message.caption + "\n\n❌ BEKOR QILINGAN")
-
-# ================== ADMIN E'LON ==================
-@router.callback_query(F.data.startswith("app_ad_"))
-async def approve_ad(call: CallbackQuery):
-    ad_id = int(call.data.split("_")[2])
-    data = await jb_read()
-    ads = data.get("ads", [])
-    ad = next((a for a in ads if a["id"] == ad_id), None)
-    if not ad:
-        await call.answer("❌ E'lon topilmadi! ", show_alert=True)
-        return
-
-    user_id = ad["user_id"]
-    me = await bot.get_me()
-
-    colors = ["primary", "success", "danger"]
-    c1 = colors[ad_id % 3]
-    c2 = colors[(ad_id + 1) % 3]
-
-    btn = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="👤 Sotuvchi bilan aloqa", url=f"tg://user?id={user_id}")],
-        [InlineKeyboardButton(text="📢 Reklama berish", url=f"https://t.me/{me.username}?start=ad")]
-    ])
-
-    try:
-        await bot.send_video(MAIN_CHANNEL_ID, video=ad["video_id"], caption=ad["text"], reply_markup=btn, parse_mode="HTML")
-    except Exception as e:
-        await call.answer(f"❌ Kanalga yuborishda XATO:\n{e} ", show_alert=True)
-        return
-
-    ad["status"] = "approved"
-    users = data.get("users", [])
-    for u in users:
-        if u["user_id"] == user_id:
-            u["posted_ads"] = u.get("posted_ads", 0) + 1
-            u["pending_approval"] = 0
-            break
-    data["ads"] = ads
-    data["users"] = users
-    await jb_write(data)
-
-    try:
-        await bot.send_message(user_id, "✅ E'loningiz kanalga joylandi! ", reply_markup=get_main_menu())
-    except:
-        pass
-
-    old_caption = call.message.caption or ""
-    try:
-        await call.message.edit_caption(caption=old_caption + "\n\n✅ KANALGA JOYLANDI", reply_markup=None)
-    except:
-        pass
-    await call.answer("✅ E'lon kanalga joylandi! ", show_alert=True)
-
-@router.callback_query(F.data.startswith("rej_ad_"))
-async def reject_ad(call: CallbackQuery):
-    ad_id = int(call.data.split("_")[2])
-    data = await jb_read()
-    ads = data.get("ads", [])
-    ad = next((a for a in ads if a["id"] == ad_id), None)
-    if not ad:
-        await call.answer("❌ E'lon topilmadi! ", show_alert=True)
-        return
-
-    user_id = ad["user_id"]
-    ad["status"] = "rejected"
-
-    users = data.get("users", [])
-    for u in users:
-        if u["user_id"] == user_id:
-            u["pending_approval"] = 0
-            break
-    data["ads"] = ads
-    data["users"] = users
-    await jb_write(data)
-
-    try:
-        await bot.send_message(user_id, "❌ E'loningiz admin tomonidan rad etildi. ", reply_markup=get_main_menu())
-    except:
-        pass
-
-    old_caption = call.message.caption or ""
-    try:
-        await call.message.edit_caption(caption=old_caption + "\n\n❌ BEKOR QILINGAN", reply_markup=None)
-    except:
-        pass
-    await call.answer("❌ E'lon bekor qilindi. ", show_alert=True)
-
-# ================== ADMIN JAVOB ==================
-@router.callback_query(F.data.startswith("reply_"))
-async def reply_support_cb(call: CallbackQuery, state: FSMContext):
-    user_id = int(call.data.split("_")[1])
-    await state.update_data(reply_to=user_id)
-    await call.message.answer("Foydalanuvchiga javob matnini kiriting:")
-    await state.set_state(AdminForm.reply_msg)
-
-@router.message(AdminForm.reply_msg)
-async def send_reply(message: Message, state: FSMContext):
-    st = await state.get_data()
-    user_id = st.get('reply_to')
-    await bot.send_message(user_id, f"👨‍💻 Admin javobi:\n\n{message.text}")
-    await message.answer("Javob yuborildi.")
     await state.clear()
 
 # ================== ADMIN PANEL ==================
@@ -1281,122 +817,47 @@ async def send_reply(message: Message, state: FSMContext):
 async def admin_panel(message: Message):
     btn = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="📊 Statistika", callback_data="admin_stats")],
-        [
-            InlineKeyboardButton(text="💰 Narxni o'zgartirish", callback_data="admin_price"),
-            InlineKeyboardButton(text="💳 Kartani o'zgartirish", callback_data="admin_card"),
-        ],
+        [InlineKeyboardButton(text="💰 Narxni o'zgartirish", callback_data="admin_price"),
+         InlineKeyboardButton(text="💳 Kartani o'zgartirish", callback_data="admin_card")],
         [InlineKeyboardButton(text="📝 Start xabarni o'zgartirish", callback_data="admin_startmsg")],
-        [
-            InlineKeyboardButton(text="➕ Kanal qo'shish", callback_data="admin_add_ch"),
-            InlineKeyboardButton(text="➖ Kanal o'chirish", callback_data="admin_del_ch"),
-        ],
+        [InlineKeyboardButton(text="➕ Kanal qo'shish", callback_data="admin_add_ch"),
+         InlineKeyboardButton(text="➖ Kanal o'chirish", callback_data="admin_del_ch")],
         [InlineKeyboardButton(text="━━━━━ 💎 UC SOZLAMALARI ━━━━━", callback_data="section_title")],
-        [InlineKeyboardButton(text="➕ UC narxi qo'shish", callback_data="admin_add_uc_price")],
-        [
-            InlineKeyboardButton(text="📋 UC narxlari", callback_data="admin_uc_list"),
-            InlineKeyboardButton(text="📦 UC buyurtmalar", callback_data="admin_uc_orders"),
-        ],
-        [InlineKeyboardButton(text="🗑 UC narxlarini tozalash", callback_data="admin_clear_uc")],
-
+        [InlineKeyboardButton(text="➕ UC narxi qo'shish", callback_data="admin_add_uc_price"),
+         InlineKeyboardButton(text="📋 UC narxlari", callback_data="admin_uc_list")],
+        [InlineKeyboardButton(text="📦 UC buyurtmalar", callback_data="admin_uc_orders"),
+         InlineKeyboardButton(text="🗑 UC narxlarini tozalash", callback_data="admin_clear_uc")],
         [InlineKeyboardButton(text="━━━━━ ⭐ STARS SOZLAMALARI ━━━━━", callback_data="section_title")],
-        [InlineKeyboardButton(text="➕ Stars narxi qo'shish", callback_data="admin_add_stars_price")],
-        [
-            InlineKeyboardButton(text="📋 Stars narxlari", callback_data="admin_stars_list"),
-            InlineKeyboardButton(text="📦 Stars buyurtmalar", callback_data="admin_stars_orders"),
-        ],
-        [InlineKeyboardButton(text="🗑 Stars narxlarini tozalash", callback_data="admin_clear_stars")],
-
+        [InlineKeyboardButton(text="➕ Stars narxi qo'shish", callback_data="admin_add_stars_price"),
+         InlineKeyboardButton(text="📋 Stars narxlari", callback_data="admin_stars_list")],
+        [InlineKeyboardButton(text="📦 Stars buyurtmalar", callback_data="admin_stars_orders"),
+         InlineKeyboardButton(text="🗑 Stars narxlarini tozalash", callback_data="admin_clear_stars")],
         [InlineKeyboardButton(text="━━━━━ 💜 PREMIUM SOZLAMALARI ━━━━━", callback_data="section_title")],
-        [InlineKeyboardButton(text="➕ Premium narxi qo'shish", callback_data="admin_add_premium_price")],
-        [
-            InlineKeyboardButton(text="📋 Premium narxlari", callback_data="admin_premium_list"),
-            InlineKeyboardButton(text="📦 Premium buyurtmalar", callback_data="admin_premium_orders"),
-        ],
-        [InlineKeyboardButton(text="🗑 Premium narxlarini tozalash", callback_data="admin_clear_premium")],
+        [InlineKeyboardButton(text="➕ Premium narxi qo'shish", callback_data="admin_add_premium_price"),
+         InlineKeyboardButton(text="📋 Premium narxlari", callback_data="admin_premium_list")],
+        [InlineKeyboardButton(text="📦 Premium buyurtmalar", callback_data="admin_premium_orders"),
+         InlineKeyboardButton(text="🗑 Premium narxlarini tozalash", callback_data="admin_clear_premium")],
     ])
-    await message.answer("⚙️ Admin panelga xush kelibsiz! ", reply_markup=btn)
+    await message.answer("⚙️ Admin panel", reply_markup=btn)
 
-# ================== XIZMATLARNI TOZALASH ==================
-@router.callback_query(F.data == "admin_clear_uc")
-async def admin_clear_uc_ask(call: CallbackQuery):
-    if call.from_user.id != ADMIN_ID:
-        await call.answer("Ruxsat yo'q! ", show_alert=True)
-        return
-    btn = InlineKeyboardMarkup(inline_keyboard=[[
-        InlineKeyboardButton(text="✅ Ha, o'chirish", callback_data="confirm_clear_uc"),
-        InlineKeyboardButton(text="❌ Yo'q", callback_data="back_to_admin"),
-    ]])
-    await call.message.answer("⚠️ Barcha UC narxlarini o'chirasizmi?\nBu amalni qaytarib bo'lmaydi! ", parse_mode="HTML", reply_markup=btn)
-    await call.answer()
-
-@router.callback_query(F.data == "confirm_clear_uc")
-async def confirm_clear_uc(call: CallbackQuery):
-    if call.from_user.id != ADMIN_ID:
-        await call.answer("Ruxsat yo'q!", show_alert=True)
-        return
+# ================== ADMIN STATISTIKA ==================
+@router.callback_query(F.data == "admin_stats")
+async def send_stats(call: CallbackQuery):
     data = await jb_read()
-    data["uc_prices"] = []
-    await jb_write(data)
-    await call.answer("✅ Barcha UC narxlari o'chirildi!", show_alert=True)
-    try:
-        await call.message.delete()
-    except:
-        pass
-
-@router.callback_query(F.data == "admin_clear_stars")
-async def admin_clear_stars_ask(call: CallbackQuery):
-    if call.from_user.id != ADMIN_ID:
-        await call.answer("Ruxsat yo'q! ", show_alert=True)
-        return
-    btn = InlineKeyboardMarkup(inline_keyboard=[[
-        InlineKeyboardButton(text="✅ Ha, o'chirish", callback_data="confirm_clear_stars"),
-        InlineKeyboardButton(text="❌ Yo'q", callback_data="back_to_admin"),
-    ]])
-    await call.message.answer("⚠️ Barcha Stars narxlarini o'chirasizmi?\nBu amalni qaytarib bo'lmaydi! ", parse_mode="HTML", reply_markup=btn)
-    await call.answer()
-
-@router.callback_query(F.data == "confirm_clear_stars")
-async def confirm_clear_stars(call: CallbackQuery):
-    if call.from_user.id != ADMIN_ID:
-        await call.answer("Ruxsat yo'q!", show_alert=True)
-        return
-    data = await jb_read()
-    data["stars_prices"] = []
-    await jb_write(data)
-    await call.answer("✅ Barcha Stars narxlari o'chirildi!", show_alert=True)
-    try:
-        await call.message.delete()
-    except:
-        pass
-
-@router.callback_query(F.data == "admin_clear_premium")
-async def admin_clear_premium_ask(call: CallbackQuery):
-    if call.from_user.id != ADMIN_ID:
-        await call.answer("Ruxsat yo'q! ", show_alert=True)
-        return
-    btn = InlineKeyboardMarkup(inline_keyboard=[[
-        InlineKeyboardButton(text="✅ Ha, o'chirish", callback_data="confirm_clear_premium"),
-        InlineKeyboardButton(text="❌ Yo'q", callback_data="back_to_admin"),
-    ]])
-    await call.message.answer("⚠️ Barcha Premium narxlarini o'chirasizmi?\nBu amalni qaytarib bo'lmaydi! ", parse_mode="HTML", reply_markup=btn)
-    await call.answer()
-
-@router.callback_query(F.data == "confirm_clear_premium")
-async def confirm_clear_premium(call: CallbackQuery):
-    if call.from_user.id != ADMIN_ID:
-        await call.answer("Ruxsat yo'q!", show_alert=True)
-        return
-    data = await jb_read()
-    data["premium_prices"] = []
-    await jb_write(data)
-    await call.answer("✅ Barcha Premium narxlari o'chirildi!", show_alert=True)
-    try:
-        await call.message.delete()
-    except:
-        pass
-
-@router.callback_query(F.data == "section_title")
-async def section_title_cb(call: CallbackQuery):
+    users = data.get("users", [])
+    uc_orders = data.get("uc_orders", [])
+    stars_orders = data.get("stars_orders", [])
+    premium_orders = data.get("premium_orders", [])
+    uc_paid = sum(1 for o in uc_orders if o.get("status") == "paid")
+    text = (
+        f"📊 <b>BOT STATISTIKASI</b>\n\n"
+        f"👥 Umumiy foydalanuvchilar: <b>{len(users)} ta</b>\n"
+        f"💎 UC buyurtmalar: <b>{len(uc_orders)} ta</b> (toʻlangan: {uc_paid})\n"
+        f"⭐ Stars buyurtmalar: <b>{len(stars_orders)} ta</b>\n"
+        f"🎖 Premium buyurtmalar: <b>{len(premium_orders)} ta</b>\n"
+        f"🕐 Vaqt: {get_time_tashkent()}"
+    )
+    await call.message.answer(text, parse_mode="HTML")
     await call.answer()
 
 # ================== ADMIN UC NARX ==================
@@ -1427,11 +888,11 @@ async def add_uc_price_save(message: Message, state: FSMContext):
     existing = next((p for p in prices if p["uc_amount"] == uc_amount), None)
     if existing:
         existing["price"] = price
-        await message.answer(f"✅ <b>{uc_amount} UC</b> narxi yangilandi: <b>{price:,} so'm</b> ".replace(",", " "), parse_mode="HTML")
+        await message.answer(f"✅ <b>{uc_amount} UC</b> narxi yangilandi: <b>{price:,} so'm</b>".replace(",", " "), parse_mode="HTML")
     else:
         nid = get_next_id(data)
         prices.append({"id": nid, "uc_amount": uc_amount, "price": price, "position": 0})
-        await message.answer(f"✅ <b>{uc_amount} UC — {price:,} so'm</b> qo'shildi! ".replace(",", " "), parse_mode="HTML")
+        await message.answer(f"✅ <b>{uc_amount} UC — {price:,} so'm</b> qo'shildi!".replace(",", " "), parse_mode="HTML")
     data["uc_prices"] = prices
     await jb_write(data)
     await state.clear()
@@ -1441,11 +902,10 @@ async def admin_uc_list(call: CallbackQuery):
     data = await jb_read()
     prices = sorted(data.get("uc_prices", []), key=lambda x: x.get("uc_amount", 0))
     if not prices:
-        await call.message.answer("❌ Hozircha UC narxlari kiritilmagan. ")
+        await call.message.answer("❌ Hozircha UC narxlari kiritilmagan.")
         await call.answer()
         return
-
-    text = "💎 <b>UC NARXLARI RO'YXATI:</b>\n\nO'chirish uchun tugmani bosing 👇\n\n "
+    text = "💎 <b>UC NARXLARI RO'YXATI:</b>\n\nO'chirish uchun tugmani bosing 👇\n\n"
     rows = []
     for item in prices:
         text += f"• {item['uc_amount']} UC — {item['price']:,} so'm\n".replace(",", " ")
@@ -1453,13 +913,8 @@ async def admin_uc_list(call: CallbackQuery):
             InlineKeyboardButton(text=f"💎 {item['uc_amount']} UC — {item['price']:,} so'm".replace(",", " "), callback_data="uc_info"),
             InlineKeyboardButton(text="🗑", callback_data=f"del_uc_price_{item['id']}"),
         ])
-
     rows.append([InlineKeyboardButton(text="🔙 Admin panel", callback_data="back_to_admin")])
     await call.message.answer(text, parse_mode="HTML", reply_markup=InlineKeyboardMarkup(inline_keyboard=rows))
-    await call.answer()
-
-@router.callback_query(F.data == "uc_info")
-async def uc_info_cb(call: CallbackQuery):
     await call.answer()
 
 @router.callback_query(F.data.startswith("del_uc_price_"))
@@ -1471,31 +926,30 @@ async def del_uc_price(call: CallbackQuery):
     if item:
         data["uc_prices"] = [p for p in prices if p["id"] != pid]
         await jb_write(data)
-        await call.answer(f"✅ {item['uc_amount']} UC narxi o'chirildi! ", show_alert=True)
-        new_prices = sorted(data["uc_prices"], key=lambda x: x.get("uc_amount", 0))
-        if not new_prices:
-            try:
-                await call.message.edit_text("❌ Barcha UC narxlari o'chirildi. ", reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                    [InlineKeyboardButton(text="🔙 Admin panel", callback_data="back_to_admin")]
-                ]))
-            except:
-                pass
-            return
-        text = "💎 UC NARXLARI RO'YXATI:\n\nO'chirish uchun tugmani bosing 👇\n\n "
-        rows = []
-        for p in new_prices:
-            text += f"• {p['uc_amount']} UC — {p['price']:,} so'm\n".replace(",", " ")
-            rows.append([
-                InlineKeyboardButton(text=f"💎 {p['uc_amount']} UC — {p['price']:,} so'm".replace(",", " "), callback_data="uc_info"),
-                InlineKeyboardButton(text="🗑", callback_data=f"del_uc_price_{p['id']}"),
-            ])
-        rows.append([InlineKeyboardButton(text="🔙 Admin panel", callback_data="back_to_admin")])
-        try:
-            await call.message.edit_text(text, parse_mode="HTML", reply_markup=InlineKeyboardMarkup(inline_keyboard=rows))
-        except:
-            pass
+        await call.answer(f"✅ {item['uc_amount']} UC narxi o'chirildi!", show_alert=True)
+        await admin_uc_list(call)  # refresh list
     else:
-        await call.answer("Topilmadi! ", show_alert=True)
+        await call.answer("Topilmadi!", show_alert=True)
+
+@router.callback_query(F.data == "admin_clear_uc")
+async def admin_clear_uc_ask(call: CallbackQuery):
+    if call.from_user.id != ADMIN_ID:
+        await call.answer("Ruxsat yo'q!", show_alert=True)
+        return
+    btn = InlineKeyboardMarkup(inline_keyboard=[[
+        InlineKeyboardButton(text="✅ Ha, o'chirish", callback_data="confirm_clear_uc"),
+        InlineKeyboardButton(text="❌ Yo'q", callback_data="back_to_admin"),
+    ]])
+    await call.message.answer("⚠️ Barcha UC narxlarini o'chirasizmi?\nBu amalni qaytarib bo'lmaydi!", parse_mode="HTML", reply_markup=btn)
+    await call.answer()
+
+@router.callback_query(F.data == "confirm_clear_uc")
+async def confirm_clear_uc(call: CallbackQuery):
+    data = await jb_read()
+    data["uc_prices"] = []
+    await jb_write(data)
+    await call.answer("✅ Barcha UC narxlari o'chirildi!", show_alert=True)
+    await call.message.delete()
 
 # ================== ADMIN STARS NARX ==================
 @router.callback_query(F.data == "admin_add_stars_price")
@@ -1525,11 +979,11 @@ async def add_stars_price_save(message: Message, state: FSMContext):
     existing = next((p for p in prices if p["stars_amount"] == stars_amount), None)
     if existing:
         existing["price"] = price
-        await message.answer(f"✅ <b>{stars_amount} Stars</b> narxi yangilandi: <b>{price:,} so'm</b> ".replace(",", " "), parse_mode="HTML")
+        await message.answer(f"✅ <b>{stars_amount} Stars</b> narxi yangilandi: <b>{price:,} so'm</b>".replace(",", " "), parse_mode="HTML")
     else:
         nid = get_next_id(data)
         prices.append({"id": nid, "stars_amount": stars_amount, "price": price, "position": 0})
-        await message.answer(f"✅ <b>{stars_amount} Stars — {price:,} so'm</b> qo'shildi! ".replace(",", " "), parse_mode="HTML")
+        await message.answer(f"✅ <b>{stars_amount} Stars — {price:,} so'm</b> qo'shildi!".replace(",", " "), parse_mode="HTML")
     data["stars_prices"] = prices
     await jb_write(data)
     await state.clear()
@@ -1539,11 +993,10 @@ async def admin_stars_list(call: CallbackQuery):
     data = await jb_read()
     prices = sorted(data.get("stars_prices", []), key=lambda x: x.get("stars_amount", 0))
     if not prices:
-        await call.message.answer("❌ Hozircha Stars narxlari kiritilmagan. ")
+        await call.message.answer("❌ Hozircha Stars narxlari kiritilmagan.")
         await call.answer()
         return
-
-    text = "⭐ <b>STARS NARXLARI RO'YXATI:</b>\n\nO'chirish uchun tugmani bosing 👇\n\n "
+    text = "⭐ <b>STARS NARXLARI RO'YXATI:</b>\n\nO'chirish uchun tugmani bosing 👇\n\n"
     rows = []
     for item in prices:
         text += f"• {item['stars_amount']} Stars — {item['price']:,} so'm\n".replace(",", " ")
@@ -1551,13 +1004,8 @@ async def admin_stars_list(call: CallbackQuery):
             InlineKeyboardButton(text=f"⭐ {item['stars_amount']} Stars — {item['price']:,} so'm".replace(",", " "), callback_data="stars_info"),
             InlineKeyboardButton(text="🗑", callback_data=f"del_stars_price_{item['id']}"),
         ])
-
     rows.append([InlineKeyboardButton(text="🔙 Admin panel", callback_data="back_to_admin")])
     await call.message.answer(text, parse_mode="HTML", reply_markup=InlineKeyboardMarkup(inline_keyboard=rows))
-    await call.answer()
-
-@router.callback_query(F.data == "stars_info")
-async def stars_info_cb(call: CallbackQuery):
     await call.answer()
 
 @router.callback_query(F.data.startswith("del_stars_price_"))
@@ -1569,31 +1017,30 @@ async def del_stars_price(call: CallbackQuery):
     if item:
         data["stars_prices"] = [p for p in prices if p["id"] != pid]
         await jb_write(data)
-        await call.answer(f"✅ {item['stars_amount']} Stars narxi o'chirildi! ", show_alert=True)
-        new_prices = sorted(data["stars_prices"], key=lambda x: x.get("stars_amount", 0))
-        if not new_prices:
-            try:
-                await call.message.edit_text("❌ Barcha Stars narxlari o'chirildi. ", reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                    [InlineKeyboardButton(text="🔙 Admin panel", callback_data="back_to_admin")]
-                ]))
-            except:
-                pass
-            return
-        text = "⭐ STARS NARXLARI RO'YXATI:\n\nO'chirish uchun tugmani bosing 👇\n\n "
-        rows = []
-        for p in new_prices:
-            text += f"• {p['stars_amount']} Stars — {p['price']:,} so'm\n".replace(",", " ")
-            rows.append([
-                InlineKeyboardButton(text=f"⭐ {p['stars_amount']} Stars — {p['price']:,} so'm".replace(",", " "), callback_data="stars_info"),
-                InlineKeyboardButton(text="🗑", callback_data=f"del_stars_price_{p['id']}"),
-            ])
-        rows.append([InlineKeyboardButton(text="🔙 Admin panel", callback_data="back_to_admin")])
-        try:
-            await call.message.edit_text(text, parse_mode="HTML", reply_markup=InlineKeyboardMarkup(inline_keyboard=rows))
-        except:
-            pass
+        await call.answer(f"✅ {item['stars_amount']} Stars narxi o'chirildi!", show_alert=True)
+        await admin_stars_list(call)
     else:
-        await call.answer("Topilmadi! ", show_alert=True)
+        await call.answer("Topilmadi!", show_alert=True)
+
+@router.callback_query(F.data == "admin_clear_stars")
+async def admin_clear_stars_ask(call: CallbackQuery):
+    if call.from_user.id != ADMIN_ID:
+        await call.answer("Ruxsat yo'q!", show_alert=True)
+        return
+    btn = InlineKeyboardMarkup(inline_keyboard=[[
+        InlineKeyboardButton(text="✅ Ha, o'chirish", callback_data="confirm_clear_stars"),
+        InlineKeyboardButton(text="❌ Yo'q", callback_data="back_to_admin"),
+    ]])
+    await call.message.answer("⚠️ Barcha Stars narxlarini o'chirasizmi?\nBu amalni qaytarib bo'lmaydi!", parse_mode="HTML", reply_markup=btn)
+    await call.answer()
+
+@router.callback_query(F.data == "confirm_clear_stars")
+async def confirm_clear_stars(call: CallbackQuery):
+    data = await jb_read()
+    data["stars_prices"] = []
+    await jb_write(data)
+    await call.answer("✅ Barcha Stars narxlari o'chirildi!", show_alert=True)
+    await call.message.delete()
 
 # ================== ADMIN PREMIUM NARX ==================
 @router.callback_query(F.data == "admin_add_premium_price")
@@ -1621,7 +1068,7 @@ async def add_premium_price_save(message: Message, state: FSMContext):
     prices.append({"id": nid, "duration": duration, "price": price, "position": 0})
     data["premium_prices"] = prices
     await jb_write(data)
-    await message.answer(f"✅ <b>{duration} — {price:,} so'm</b> qo'shildi! ".replace(",", " "), parse_mode="HTML")
+    await message.answer(f"✅ <b>{duration} — {price:,} so'm</b> qo'shildi!".replace(",", " "), parse_mode="HTML")
     await state.clear()
 
 @router.callback_query(F.data == "admin_premium_list")
@@ -1629,11 +1076,10 @@ async def admin_premium_list(call: CallbackQuery):
     data = await jb_read()
     prices = sorted(data.get("premium_prices", []), key=lambda x: x.get("price", 0))
     if not prices:
-        await call.message.answer("❌ Hozircha Premium narxlari kiritilmagan. ")
+        await call.message.answer("❌ Hozircha Premium narxlari kiritilmagan.")
         await call.answer()
         return
-
-    text = "💜 <b>PREMIUM NARXLARI RO'YXATI:</b>\n\nO'chirish uchun tugmani bosing 👇\n\n "
+    text = "💜 <b>PREMIUM NARXLARI RO'YXATI:</b>\n\nO'chirish uchun tugmani bosing 👇\n\n"
     rows = []
     for item in prices:
         text += f"• {item['duration']} — {item['price']:,} so'm\n".replace(",", " ")
@@ -1641,13 +1087,8 @@ async def admin_premium_list(call: CallbackQuery):
             InlineKeyboardButton(text=f"💜 {item['duration']} — {item['price']:,} so'm".replace(",", " "), callback_data="premium_info"),
             InlineKeyboardButton(text="🗑", callback_data=f"del_premium_price_{item['id']}"),
         ])
-
     rows.append([InlineKeyboardButton(text="🔙 Admin panel", callback_data="back_to_admin")])
     await call.message.answer(text, parse_mode="HTML", reply_markup=InlineKeyboardMarkup(inline_keyboard=rows))
-    await call.answer()
-
-@router.callback_query(F.data == "premium_info")
-async def premium_info_cb(call: CallbackQuery):
     await call.answer()
 
 @router.callback_query(F.data.startswith("del_premium_price_"))
@@ -1659,31 +1100,30 @@ async def del_premium_price(call: CallbackQuery):
     if item:
         data["premium_prices"] = [p for p in prices if p["id"] != pid]
         await jb_write(data)
-        await call.answer(f"✅ {item['duration']} narxi o'chirildi! ", show_alert=True)
-        new_prices = sorted(data["premium_prices"], key=lambda x: x.get("price", 0))
-        if not new_prices:
-            try:
-                await call.message.edit_text("❌ Barcha Premium narxlari o'chirildi. ", reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                    [InlineKeyboardButton(text="🔙 Admin panel", callback_data="back_to_admin")]
-                ]))
-            except:
-                pass
-            return
-        text = "💜 PREMIUM NARXLARI RO'YXATI:\n\nO'chirish uchun tugmani bosing 👇\n\n "
-        rows = []
-        for p in new_prices:
-            text += f"• {p['duration']} — {p['price']:,} so'm\n".replace(",", " ")
-            rows.append([
-                InlineKeyboardButton(text=f"💜 {p['duration']} — {p['price']:,} so'm".replace(",", " "), callback_data="premium_info"),
-                InlineKeyboardButton(text="🗑", callback_data=f"del_premium_price_{p['id']}"),
-            ])
-        rows.append([InlineKeyboardButton(text="🔙 Admin panel", callback_data="back_to_admin")])
-        try:
-            await call.message.edit_text(text, parse_mode="HTML", reply_markup=InlineKeyboardMarkup(inline_keyboard=rows))
-        except:
-            pass
+        await call.answer(f"✅ {item['duration']} narxi o'chirildi!", show_alert=True)
+        await admin_premium_list(call)
     else:
-        await call.answer("Topilmadi! ", show_alert=True)
+        await call.answer("Topilmadi!", show_alert=True)
+
+@router.callback_query(F.data == "admin_clear_premium")
+async def admin_clear_premium_ask(call: CallbackQuery):
+    if call.from_user.id != ADMIN_ID:
+        await call.answer("Ruxsat yo'q!", show_alert=True)
+        return
+    btn = InlineKeyboardMarkup(inline_keyboard=[[
+        InlineKeyboardButton(text="✅ Ha, o'chirish", callback_data="confirm_clear_premium"),
+        InlineKeyboardButton(text="❌ Yo'q", callback_data="back_to_admin"),
+    ]])
+    await call.message.answer("⚠️ Barcha Premium narxlarini o'chirasizmi?\nBu amalni qaytarib bo'lmaydi!", parse_mode="HTML", reply_markup=btn)
+    await call.answer()
+
+@router.callback_query(F.data == "confirm_clear_premium")
+async def confirm_clear_premium(call: CallbackQuery):
+    data = await jb_read()
+    data["premium_prices"] = []
+    await jb_write(data)
+    await call.answer("✅ Barcha Premium narxlari o'chirildi!", show_alert=True)
+    await call.message.delete()
 
 # ================== ADMIN BUYURTMALAR ==================
 @router.callback_query(F.data == "admin_uc_orders")
@@ -1691,15 +1131,13 @@ async def admin_uc_orders(call: CallbackQuery):
     data = await jb_read()
     orders = sorted(data.get("uc_orders", []), key=lambda x: x.get("id", 0), reverse=True)[:20]
     if not orders:
-        await call.message.answer("📦 Hozircha UC buyurtmalar yo'q. ")
+        await call.message.answer("📦 Hozircha UC buyurtmalar yo'q.")
         await call.answer()
         return
-
-    text = "📦 <b>OXIRGI 20 UC BUYURTMA:</b>\n\n "
+    text = "📦 <b>OXIRGI 20 UC BUYURTMA:</b>\n\n"
     for o in orders:
-        emoji = "⏳ " if o["status"] == "pending" else ("✅ " if o["status"] == "approved" else "❌ ")
+        emoji = "⏳" if o["status"] == "pending" else ("✅" if o["status"] == "paid" else "❌")
         text += f"{emoji} #{o['id']} | {o['full_name']} | {o['uc_amount']} UC | {o['price']:,} so'm | {o['order_date']}\n".replace(",", " ")
-
     await call.message.answer(text, parse_mode="HTML")
     await call.answer()
 
@@ -1708,14 +1146,13 @@ async def admin_stars_orders(call: CallbackQuery):
     data = await jb_read()
     orders = sorted(data.get("stars_orders", []), key=lambda x: x.get("id", 0), reverse=True)[:20]
     if not orders:
-        await call.message.answer("⭐ Hozircha Stars buyurtmalar yo'q. ")
+        await call.message.answer("⭐ Hozircha Stars buyurtmalar yo'q.")
         await call.answer()
         return
-    text = "⭐ <b>OXIRGI 20 STARS BUYURTMA:</b>\n\n "
+    text = "⭐ <b>OXIRGI 20 STARS BUYURTMA:</b>\n\n"
     for o in orders:
-        emoji = "⏳ " if o["status"] == "pending" else ("✅ " if o["status"] == "approved" else "❌ ")
-        text += f"{emoji} #{o['id']} | {o['full_name']} | {o['stars_amount']} Stars | @{o['target_username']} | {o['order_date']}\n "
-
+        emoji = "⏳" if o["status"] == "pending" else ("✅" if o["status"] == "paid" else "❌")
+        text += f"{emoji} #{o['id']} | {o['full_name']} | {o['stars_amount']} Stars | @{o['target_username']} | {o['order_date']}\n"
     await call.message.answer(text, parse_mode="HTML")
     await call.answer()
 
@@ -1724,22 +1161,20 @@ async def admin_premium_orders(call: CallbackQuery):
     data = await jb_read()
     orders = sorted(data.get("premium_orders", []), key=lambda x: x.get("id", 0), reverse=True)[:20]
     if not orders:
-        await call.message.answer("⭐ Hozircha Premium buyurtmalar yo'q. ")
+        await call.message.answer("⭐ Hozircha Premium buyurtmalar yo'q.")
         await call.answer()
         return
-
-    text = "⭐ <b>OXIRGI 20 PREMIUM BUYURTMA:</b>\n\n "
+    text = "⭐ <b>OXIRGI 20 PREMIUM BUYURTMA:</b>\n\n"
     for o in orders:
-        emoji = "⏳ " if o["status"] == "pending" else ("✅ " if o["status"] == "approved" else "❌ ")
-        text += f"{emoji} #{o['id']} | {o['full_name']} | {o['duration']} | @{o['target_username']} | {o['order_date']}\n "
-
+        emoji = "⏳" if o["status"] == "pending" else ("✅" if o["status"] == "paid" else "❌")
+        text += f"{emoji} #{o['id']} | {o['full_name']} | {o['duration']} | @{o['target_username']} | {o['order_date']}\n"
     await call.message.answer(text, parse_mode="HTML")
     await call.answer()
 
 # ================== ADMIN SOZLAMALAR ==================
 @router.callback_query(F.data == "admin_price")
 async def set_price_step(call: CallbackQuery, state: FSMContext):
-    await call.message.answer("Yangi narxni kiriting (faqat raqam):")
+    await call.message.answer("Yangi e'lon narxini kiriting (faqat raqam):")
     await state.set_state(AdminForm.price)
 
 @router.message(AdminForm.price)
@@ -1752,7 +1187,7 @@ async def save_price(message: Message, state: FSMContext):
 
 @router.callback_query(F.data == "admin_card")
 async def set_card_step(call: CallbackQuery, state: FSMContext):
-    await call.message.answer("Yangi karta raqamini kiriting:")
+    await call.message.answer("Yangi karta raqamini kiriting (faqat ma'lumot uchun):")
     await state.set_state(AdminForm.card)
 
 @router.message(AdminForm.card)
@@ -1825,26 +1260,85 @@ async def back_to_admin(call: CallbackQuery):
     await admin_panel(call.message)
     await call.answer()
 
-# ================== ADMIN STATISTIKA ==================
-@router.callback_query(F.data == "admin_stats")
-async def send_stats(call: CallbackQuery):
-    data = await jb_read()
-    users = data.get("users", [])
-    uc_orders = data.get("uc_orders", [])
-    stars_orders = data.get("stars_orders", [])
-    premium_orders = data.get("premium_orders", [])
-    uc_approved = sum(1 for o in uc_orders if o.get("status") == "approved")
+# ================== ADMIN JAVOB ==================
+@router.callback_query(F.data.startswith("reply_"))
+async def reply_support_cb(call: CallbackQuery, state: FSMContext):
+    user_id = int(call.data.split("_")[1])
+    await state.update_data(reply_to=user_id)
+    await call.message.answer("Foydalanuvchiga javob matnini kiriting:")
+    await state.set_state(AdminForm.reply_msg)
 
-    text = (
-        f"📊 <b>BOT STATISTIKASI</b>\n\n"
-        f"👥 Umumiy foydalanuvchilar: <b>{len(users)} ta</b>\n"
-        f"💎 UC buyurtmalar: <b>{len(uc_orders)} ta</b> (tasdiqlangan: {uc_approved})\n"
-        f"⭐ Stars buyurtmalar: <b>{len(stars_orders)} ta</b>\n"
-        f"🎖 Premium buyurtmalar: <b>{len(premium_orders)} ta</b>\n"
-        f"🕐 Vaqt: {get_time_tashkent()} "
-    )
-    await call.message.answer(text, parse_mode="HTML")
-    await call.answer()
+@router.message(AdminForm.reply_msg)
+async def send_reply(message: Message, state: FSMContext):
+    st = await state.get_data()
+    user_id = st.get('reply_to')
+    await bot.send_message(user_id, f"👨‍💻 Admin javobi:\n\n{message.text}")
+    await message.answer("Javob yuborildi.")
+    await state.clear()
+
+# ================== ADMIN E'LON TASDIQLASH ==================
+@router.callback_query(F.data.startswith("app_ad_"))
+async def approve_ad(call: CallbackQuery):
+    ad_id = int(call.data.split("_")[2])
+    data = await jb_read()
+    ads = data.get("ads", [])
+    ad = next((a for a in ads if a["id"] == ad_id), None)
+    if not ad:
+        await call.answer("❌ E'lon topilmadi!", show_alert=True)
+        return
+
+    user_id = ad["user_id"]
+    me = await bot.get_me()
+    btn = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="👤 Sotuvchi bilan aloqa", url=f"tg://user?id={user_id}")],
+        [InlineKeyboardButton(text="📢 Reklama berish", url=f"https://t.me/{me.username}?start=ad")]
+    ])
+
+    try:
+        await bot.send_video(MAIN_CHANNEL_ID, video=ad["video_id"], caption=ad["text"], reply_markup=btn, parse_mode="HTML")
+    except Exception as e:
+        await call.answer(f"❌ Kanalga yuborishda XATO: {e}", show_alert=True)
+        return
+
+    ad["status"] = "approved"
+    users = data.get("users", [])
+    for u in users:
+        if u["user_id"] == user_id:
+            u["posted_ads"] = u.get("posted_ads", 0) + 1
+            u["pending_approval"] = 0
+            break
+    data["ads"] = ads
+    data["users"] = users
+    await jb_write(data)
+
+    await bot.send_message(user_id, "✅ E'loningiz kanalga joylandi!", reply_markup=get_main_menu())
+    await call.message.edit_caption(caption=call.message.caption + "\n\n✅ KANALGA JOYLANDI", reply_markup=None)
+    await call.answer("✅ E'lon kanalga joylandi!", show_alert=True)
+
+@router.callback_query(F.data.startswith("rej_ad_"))
+async def reject_ad(call: CallbackQuery):
+    ad_id = int(call.data.split("_")[2])
+    data = await jb_read()
+    ads = data.get("ads", [])
+    ad = next((a for a in ads if a["id"] == ad_id), None)
+    if not ad:
+        await call.answer("❌ E'lon topilmadi!", show_alert=True)
+        return
+
+    user_id = ad["user_id"]
+    ad["status"] = "rejected"
+    users = data.get("users", [])
+    for u in users:
+        if u["user_id"] == user_id:
+            u["pending_approval"] = 0
+            break
+    data["ads"] = ads
+    data["users"] = users
+    await jb_write(data)
+
+    await bot.send_message(user_id, "❌ E'loningiz admin tomonidan rad etildi.", reply_markup=get_main_menu())
+    await call.message.edit_caption(caption=call.message.caption + "\n\n❌ BEKOR QILINGAN", reply_markup=None)
+    await call.answer("❌ E'lon bekor qilindi.", show_alert=True)
 
 # ================== CHECKBOT ==================
 @router.message(Command("checkbot"), F.from_user.id == ADMIN_ID)
@@ -1854,19 +1348,19 @@ async def check_bot_status(message: Message):
         member = await bot.get_chat_member(MAIN_CHANNEL_ID, me.id)
         status = member.status
         can_post = getattr(member, 'can_post_messages', False)
-        ha = "✅ Ha "
-        yoq = "❌ Yo'q "
-        ok = "✅ Hammasi yaxshi! "
-        xato = "❌ Botni kanalga ADMIN qilib qo'shish kerak! "
+        ha = "✅ Ha"
+        yoq = "❌ Yo'q"
+        ok = "✅ Hammasi yaxshi!"
+        xato = "❌ Botni kanalga ADMIN qilib qo'shish kerak!"
         await message.answer(
             f"🤖 Bot: @{me.username}\n"
             f"📢 Kanal: {MAIN_CHANNEL_ID}\n"
             f"👤 Status: {status}\n"
             f"✉️ Post yuborish huquqi: {ha if can_post else yoq}\n\n"
-            f"{ok if can_post else xato} "
+            f"{ok if can_post else xato}"
         )
     except Exception as e:
-        await message.answer(f"❌ Xatolik: {e} ")
+        await message.answer(f"❌ Xatolik: {e}")
 
 # ================== ASOSIY ISHGA TUSHIRISH ==================
 async def main():
@@ -1875,6 +1369,17 @@ async def main():
     print("✅ Baza tayyor!")
     dp.include_router(router)
     print("✅ Bot ishga tushdi...")
+
+    # Webhook server
+    app = web.Application()
+    app.router.add_post('/webhook', webhook_handler)
+    runner = web.AppRunner(app)
+    await runner.setup()
+    site = web.TCPSite(runner, '0.0.0.0', 8080)
+    await site.start()
+    print("✅ Webhook server 8080-portda ishga tushdi.")
+
+    # Bot polling
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
