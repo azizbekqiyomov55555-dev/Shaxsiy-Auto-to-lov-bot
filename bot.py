@@ -145,7 +145,8 @@ class SupportForm(StatesGroup):
     msg = State()
 
 class AdminForm(StatesGroup):
-    start_msg = State()    price = State()
+    start_msg = State()
+price = State()
     card = State()
     add_channel_id = State()
     add_channel_url = State()
