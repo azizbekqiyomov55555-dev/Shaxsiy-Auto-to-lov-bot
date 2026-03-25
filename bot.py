@@ -2183,12 +2183,14 @@ async def check_bot_status(message: Message):
     except Exception as e:
         await message.answer(f"❌ Xatolik: {e}")
 
+
 # ================== ASOSIY ISHGA TUSHIRISH ==================
 async def main():
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s - %(levelname)s - %(message)s"
     )
+
     print("⏳ SQLite baza tayyorlanmoqda...")
     init_db()
     print("✅ Baza tayyor!")
@@ -2203,4 +2205,6 @@ async def main():
     await bot.delete_webhook(drop_pending_updates=True)
     await dp.start_polling(bot)
 
-if __name__ == "__main__":    asyncio.run(main())
+
+if __name__ == "__main__":
+    asyncio.run(main())
