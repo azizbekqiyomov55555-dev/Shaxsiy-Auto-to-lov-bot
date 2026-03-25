@@ -290,9 +290,9 @@ async def start_cmd(message: Message, state: FSMContext):
     unsubbed = await check_subscription(message.from_user.id)
     if unsubbed:
         btn = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text=f"📢 Kanal {i+1} — Obuna bo'lish", url=url)]
+            [InlineKeyboardButton(text=f"📢 Kanal {i+1} — Obuna bo'lish", url=url, style="primary")]
             for i, url in enumerate(unsubbed)
-        ] + [[InlineKeyboardButton(text="✅ Tasdiqlash", callback_data="check_sub")]])
+        ] + [[InlineKeyboardButton(text="✅ Tasdiqlash", callback_data="check_sub", style="success")]])
         await message.answer("Botdan foydalanish uchun kanallarga obuna bo'ling:", reply_markup=btn)
         return
 
@@ -337,7 +337,7 @@ async def menu_ad_cb(message: Message, state: FSMContext):
         # Create payment order
         order_id = get_next_id(data)
         payment_order = {
-            "id": get_next_id(data),  # separate ID for payment record
+            "id": get_next_id(data),
             "order_id": order_id,
             "user_id": message.from_user.id,
             "type": "Ad",
@@ -351,8 +351,8 @@ async def menu_ad_cb(message: Message, state: FSMContext):
         payment_url = await create_checkout_payment(price, f"Ad {order_id}", order_id, message.from_user.id)
         if payment_url:
             btn = InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(text="💳 To'lov qilish", url=payment_url)],
-                [InlineKeyboardButton(text="🔄 Tekshirish", callback_data=f"check_payment_{order_id}")]
+                [InlineKeyboardButton(text="💳 To'lov qilish", url=payment_url, style="primary")],
+                [InlineKeyboardButton(text="🔄 Tekshirish", callback_data=f"check_payment_{order_id}", style="secondary")]
             ])
             await message.answer(
                 f"Sizning bepul e'lonlar limitingiz tugagan.\n"
@@ -377,20 +377,28 @@ async def menu_help_cb(message: Message, state: FSMContext):
 def get_uc_prices_keyboard(data, page=0):
     prices = sorted(data.get("uc_prices", []), key=lambda x: x.get("position", 0))
     if not prices:
-        return InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="❌ Narxlar yo'q", callback_data="no_prices")]])
+        return InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="❌ Narxlar yo'q", callback_data="no_prices", style="danger")]])
     ITEMS_PER_PAGE = 5
     total_pages = (len(prices) + ITEMS_PER_PAGE - 1) // ITEMS_PER_PAGE
     page = max(0, min(page, total_pages-1))
     start, end = page*ITEMS_PER_PAGE, (page+1)*ITEMS_PER_PAGE
-    rows = [[InlineKeyboardButton(
-        text=f"💎 {p['uc_amount']} UC — {p['price']:,} so'm".replace(",", " "),
-        callback_data=f"buy_uc_{p['id']}_{p['uc_amount']}_{p['price']}"
-    )] for p in prices[start:end]]
+    rows = []
+    for p in prices[start:end]:
+        rows.append([
+            InlineKeyboardButton(
+                text=f"💎 {p['uc_amount']} UC — {p['price']:,} so'm".replace(",", " "),
+                callback_data=f"buy_uc_{p['id']}_{p['uc_amount']}_{p['price']}",
+                style="primary"
+            )
+        ])
     nav = []
-    if page > 0: nav.append(InlineKeyboardButton("⬅️", callback_data=f"uc_page_{page-1}"))
-    if page < total_pages-1: nav.append(InlineKeyboardButton("➡️", callback_data=f"uc_page_{page+1}"))
-    if nav: rows.append(nav)
-    rows.append([InlineKeyboardButton("🔙 Orqaga", callback_data="uc_back")])
+    if page > 0:
+        nav.append(InlineKeyboardButton("⬅️", callback_data=f"uc_page_{page-1}", style="primary"))
+    if page < total_pages-1:
+        nav.append(InlineKeyboardButton("➡️", callback_data=f"uc_page_{page+1}", style="primary"))
+    if nav:
+        rows.append(nav)
+    rows.append([InlineKeyboardButton("🔙 Orqaga", callback_data="uc_back", style="danger")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 @router.message(F.text == "🎮 PUBG MOBILE UC OLISH 💎")
@@ -459,8 +467,8 @@ async def get_pubg_id(message: Message, state: FSMContext):
     payment_url = await create_checkout_payment(price, f"UC {order_id}", order_id, message.from_user.id)
     if payment_url:
         btn = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="💳 To'lov qilish", url=payment_url)],
-            [InlineKeyboardButton(text="🔄 Tekshirish", callback_data=f"check_payment_{order_id}")]
+            [InlineKeyboardButton(text="💳 To'lov qilish", url=payment_url, style="primary")],
+            [InlineKeyboardButton(text="🔄 Tekshirish", callback_data=f"check_payment_{order_id}", style="secondary")]
         ])
         await message.answer(
             f"💎 <b>{uc_amount} UC — {price:,} so'm</b>\n\n"
@@ -480,20 +488,28 @@ async def pubg_id_wrong(message: Message):
 def get_stars_prices_keyboard(data, page=0):
     prices = sorted(data.get("stars_prices", []), key=lambda x: x.get("position", 0))
     if not prices:
-        return InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="❌ Narxlar yo'q", callback_data="no_prices")]])
+        return InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="❌ Narxlar yo'q", callback_data="no_prices", style="danger")]])
     ITEMS_PER_PAGE = 5
     total_pages = (len(prices) + ITEMS_PER_PAGE - 1) // ITEMS_PER_PAGE
     page = max(0, min(page, total_pages-1))
     start, end = page*ITEMS_PER_PAGE, (page+1)*ITEMS_PER_PAGE
-    rows = [[InlineKeyboardButton(
-        text=f"⭐ {p['stars_amount']} Stars — {p['price']:,} so'm".replace(",", " "),
-        callback_data=f"buy_stars_{p['id']}_{p['stars_amount']}_{p['price']}"
-    )] for p in prices[start:end]]
+    rows = []
+    for p in prices[start:end]:
+        rows.append([
+            InlineKeyboardButton(
+                text=f"⭐ {p['stars_amount']} Stars — {p['price']:,} so'm".replace(",", " "),
+                callback_data=f"buy_stars_{p['id']}_{p['stars_amount']}_{p['price']}",
+                style="primary"
+            )
+        ])
     nav = []
-    if page > 0: nav.append(InlineKeyboardButton("⬅️", callback_data=f"stars_page_{page-1}"))
-    if page < total_pages-1: nav.append(InlineKeyboardButton("➡️", callback_data=f"stars_page_{page+1}"))
-    if nav: rows.append(nav)
-    rows.append([InlineKeyboardButton("🔙 Orqaga", callback_data="stars_back")])
+    if page > 0:
+        nav.append(InlineKeyboardButton("⬅️", callback_data=f"stars_page_{page-1}", style="primary"))
+    if page < total_pages-1:
+        nav.append(InlineKeyboardButton("➡️", callback_data=f"stars_page_{page+1}", style="primary"))
+    if nav:
+        rows.append(nav)
+    rows.append([InlineKeyboardButton("🔙 Orqaga", callback_data="stars_back", style="danger")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 @router.message(F.text == "🌟 STARS OLISH")
@@ -519,8 +535,8 @@ async def buy_stars_cb(call: CallbackQuery, state: FSMContext):
     stars_id, stars_amount, price = int(parts[2]), int(parts[3]), int(parts[4])
     await state.update_data(stars_id=stars_id, stars_amount=stars_amount, stars_price=price)
     btn = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="👤 O'zimga", callback_data="stars_target_me")],
-        [InlineKeyboardButton(text="👫 Do'stimga", callback_data="stars_target_friend")]
+        [InlineKeyboardButton(text="👤 O'zimga", callback_data="stars_target_me", style="success")],
+        [InlineKeyboardButton(text="👫 Do'stimga", callback_data="stars_target_friend", style="primary")]
     ])
     await call.message.edit_text("Stars kimga kerak?", reply_markup=btn)
     await state.set_state(StarsOrderForm.choose_target)
@@ -581,8 +597,8 @@ async def ask_stars_payment(event, state: FSMContext):
     payment_url = await create_checkout_payment(price, f"Stars {order_id}", order_id, event.from_user.id)
     if payment_url:
         btn = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="💳 To'lov qilish", url=payment_url)],
-            [InlineKeyboardButton(text="🔄 Tekshirish", callback_data=f"check_payment_{order_id}")]
+            [InlineKeyboardButton(text="💳 To'lov qilish", url=payment_url, style="primary")],
+            [InlineKeyboardButton(text="🔄 Tekshirish", callback_data=f"check_payment_{order_id}", style="secondary")]
         ])
         await event.message.answer(
             f"⭐ <b>{stars_amount} Stars — {price:,} so'm</b>\n"
@@ -598,20 +614,28 @@ async def ask_stars_payment(event, state: FSMContext):
 def get_premium_prices_keyboard(data, page=0):
     prices = sorted(data.get("premium_prices", []), key=lambda x: x.get("price", 0))
     if not prices:
-        return InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="❌ Narxlar yo'q", callback_data="no_prices")]])
+        return InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="❌ Narxlar yo'q", callback_data="no_prices", style="danger")]])
     ITEMS_PER_PAGE = 5
     total_pages = (len(prices) + ITEMS_PER_PAGE - 1) // ITEMS_PER_PAGE
     page = max(0, min(page, total_pages-1))
     start, end = page*ITEMS_PER_PAGE, (page+1)*ITEMS_PER_PAGE
-    rows = [[InlineKeyboardButton(
-        text=f"⭐ {p['duration']} — {p['price']:,} so'm".replace(",", " "),
-        callback_data=f"buy_premium_{p['id']}_{p['price']}"
-    )] for p in prices[start:end]]
+    rows = []
+    for p in prices[start:end]:
+        rows.append([
+            InlineKeyboardButton(
+                text=f"⭐ {p['duration']} — {p['price']:,} so'm".replace(",", " "),
+                callback_data=f"buy_premium_{p['id']}_{p['price']}",
+                style="primary"
+            )
+        ])
     nav = []
-    if page > 0: nav.append(InlineKeyboardButton("⬅️", callback_data=f"premium_page_{page-1}"))
-    if page < total_pages-1: nav.append(InlineKeyboardButton("➡️", callback_data=f"premium_page_{page+1}"))
-    if nav: rows.append(nav)
-    rows.append([InlineKeyboardButton("🔙 Orqaga", callback_data="premium_back")])
+    if page > 0:
+        nav.append(InlineKeyboardButton("⬅️", callback_data=f"premium_page_{page-1}", style="primary"))
+    if page < total_pages-1:
+        nav.append(InlineKeyboardButton("➡️", callback_data=f"premium_page_{page+1}", style="primary"))
+    if nav:
+        rows.append(nav)
+    rows.append([InlineKeyboardButton("🔙 Orqaga", callback_data="premium_back", style="danger")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 @router.message(F.text == "⭐ TELEGRAM PREMIUM")
@@ -685,8 +709,8 @@ async def get_premium_username(message: Message, state: FSMContext):
     payment_url = await create_checkout_payment(price, f"Premium {order_id}", order_id, message.from_user.id)
     if payment_url:
         btn = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="💳 To'lov qilish", url=payment_url)],
-            [InlineKeyboardButton(text="🔄 Tekshirish", callback_data=f"check_payment_{order_id}")]
+            [InlineKeyboardButton(text="💳 To'lov qilish", url=payment_url, style="primary")],
+            [InlineKeyboardButton(text="🔄 Tekshirish", callback_data=f"check_payment_{order_id}", style="secondary")]
         ])
         await message.answer(
             f"⭐ <b>{duration} — {price:,} so'm</b>\n"
@@ -790,8 +814,8 @@ async def get_phone(message: Message, state: FSMContext):
     await jb_write(data)
 
     btn = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="✅ Tasdiqlash", callback_data=f"app_ad_{ad_id}"),
-         InlineKeyboardButton(text="❌ Bekor qilish", callback_data=f"rej_ad_{ad_id}")]
+        [InlineKeyboardButton(text="✅ Tasdiqlash", callback_data=f"app_ad_{ad_id}", style="success"),
+         InlineKeyboardButton(text="❌ Bekor qilish", callback_data=f"rej_ad_{ad_id}", style="danger")]
     ])
 
     try:
@@ -807,7 +831,7 @@ async def get_phone(message: Message, state: FSMContext):
 # ================== SUPPORT ==================
 @router.message(SupportForm.msg)
 async def get_support_msg(message: Message, state: FSMContext):
-    btn = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="💬 Javob berish", callback_data=f"reply_{message.from_user.id}")]])
+    btn = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="💬 Javob berish", callback_data=f"reply_{message.from_user.id}", style="primary")]])
     await bot.send_message(ADMIN_ID, f"📩 Yangi xabar!\nKimdan: {message.from_user.full_name} (ID: {message.from_user.id})\n\nXabar: {message.text}", reply_markup=btn)
     await message.answer("Xabaringiz adminga yetkazildi.", reply_markup=get_main_menu())
     await state.clear()
@@ -816,27 +840,27 @@ async def get_support_msg(message: Message, state: FSMContext):
 @router.message(Command("admin"), F.from_user.id == ADMIN_ID)
 async def admin_panel(message: Message):
     btn = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="📊 Statistika", callback_data="admin_stats")],
-        [InlineKeyboardButton(text="💰 Narxni o'zgartirish", callback_data="admin_price"),
-         InlineKeyboardButton(text="💳 Kartani o'zgartirish", callback_data="admin_card")],
-        [InlineKeyboardButton(text="📝 Start xabarni o'zgartirish", callback_data="admin_startmsg")],
-        [InlineKeyboardButton(text="➕ Kanal qo'shish", callback_data="admin_add_ch"),
-         InlineKeyboardButton(text="➖ Kanal o'chirish", callback_data="admin_del_ch")],
-        [InlineKeyboardButton(text="━━━━━ 💎 UC SOZLAMALARI ━━━━━", callback_data="section_title")],
-        [InlineKeyboardButton(text="➕ UC narxi qo'shish", callback_data="admin_add_uc_price"),
-         InlineKeyboardButton(text="📋 UC narxlari", callback_data="admin_uc_list")],
-        [InlineKeyboardButton(text="📦 UC buyurtmalar", callback_data="admin_uc_orders"),
-         InlineKeyboardButton(text="🗑 UC narxlarini tozalash", callback_data="admin_clear_uc")],
-        [InlineKeyboardButton(text="━━━━━ ⭐ STARS SOZLAMALARI ━━━━━", callback_data="section_title")],
-        [InlineKeyboardButton(text="➕ Stars narxi qo'shish", callback_data="admin_add_stars_price"),
-         InlineKeyboardButton(text="📋 Stars narxlari", callback_data="admin_stars_list")],
-        [InlineKeyboardButton(text="📦 Stars buyurtmalar", callback_data="admin_stars_orders"),
-         InlineKeyboardButton(text="🗑 Stars narxlarini tozalash", callback_data="admin_clear_stars")],
-        [InlineKeyboardButton(text="━━━━━ 💜 PREMIUM SOZLAMALARI ━━━━━", callback_data="section_title")],
-        [InlineKeyboardButton(text="➕ Premium narxi qo'shish", callback_data="admin_add_premium_price"),
-         InlineKeyboardButton(text="📋 Premium narxlari", callback_data="admin_premium_list")],
-        [InlineKeyboardButton(text="📦 Premium buyurtmalar", callback_data="admin_premium_orders"),
-         InlineKeyboardButton(text="🗑 Premium narxlarini tozalash", callback_data="admin_clear_premium")],
+        [InlineKeyboardButton(text="📊 Statistika", callback_data="admin_stats", style="primary")],
+        [InlineKeyboardButton(text="💰 Narxni o'zgartirish", callback_data="admin_price", style="success"),
+         InlineKeyboardButton(text="💳 Kartani o'zgartirish", callback_data="admin_card", style="success")],
+        [InlineKeyboardButton(text="📝 Start xabarni o'zgartirish", callback_data="admin_startmsg", style="primary")],
+        [InlineKeyboardButton(text="➕ Kanal qo'shish", callback_data="admin_add_ch", style="success"),
+         InlineKeyboardButton(text="➖ Kanal o'chirish", callback_data="admin_del_ch", style="danger")],
+        [InlineKeyboardButton(text="━━━━━ 💎 UC SOZLAMALARI ━━━━━", callback_data="section_title", style="secondary")],
+        [InlineKeyboardButton(text="➕ UC narxi qo'shish", callback_data="admin_add_uc_price", style="success"),
+         InlineKeyboardButton(text="📋 UC narxlari", callback_data="admin_uc_list", style="primary")],
+        [InlineKeyboardButton(text="📦 UC buyurtmalar", callback_data="admin_uc_orders", style="primary"),
+         InlineKeyboardButton(text="🗑 UC narxlarini tozalash", callback_data="admin_clear_uc", style="danger")],
+        [InlineKeyboardButton(text="━━━━━ ⭐ STARS SOZLAMALARI ━━━━━", callback_data="section_title", style="secondary")],
+        [InlineKeyboardButton(text="➕ Stars narxi qo'shish", callback_data="admin_add_stars_price", style="success"),
+         InlineKeyboardButton(text="📋 Stars narxlari", callback_data="admin_stars_list", style="primary")],
+        [InlineKeyboardButton(text="📦 Stars buyurtmalar", callback_data="admin_stars_orders", style="primary"),
+         InlineKeyboardButton(text="🗑 Stars narxlarini tozalash", callback_data="admin_clear_stars", style="danger")],
+        [InlineKeyboardButton(text="━━━━━ 💜 PREMIUM SOZLAMALARI ━━━━━", callback_data="section_title", style="secondary")],
+        [InlineKeyboardButton(text="➕ Premium narxi qo'shish", callback_data="admin_add_premium_price", style="success"),
+         InlineKeyboardButton(text="📋 Premium narxlari", callback_data="admin_premium_list", style="primary")],
+        [InlineKeyboardButton(text="📦 Premium buyurtmalar", callback_data="admin_premium_orders", style="primary"),
+         InlineKeyboardButton(text="🗑 Premium narxlarini tozalash", callback_data="admin_clear_premium", style="danger")],
     ])
     await message.answer("⚙️ Admin panel", reply_markup=btn)
 
@@ -910,10 +934,10 @@ async def admin_uc_list(call: CallbackQuery):
     for item in prices:
         text += f"• {item['uc_amount']} UC — {item['price']:,} so'm\n".replace(",", " ")
         rows.append([
-            InlineKeyboardButton(text=f"💎 {item['uc_amount']} UC — {item['price']:,} so'm".replace(",", " "), callback_data="uc_info"),
-            InlineKeyboardButton(text="🗑", callback_data=f"del_uc_price_{item['id']}"),
+            InlineKeyboardButton(text=f"💎 {item['uc_amount']} UC — {item['price']:,} so'm".replace(",", " "), callback_data="uc_info", style="primary"),
+            InlineKeyboardButton(text="🗑", callback_data=f"del_uc_price_{item['id']}", style="danger"),
         ])
-    rows.append([InlineKeyboardButton(text="🔙 Admin panel", callback_data="back_to_admin")])
+    rows.append([InlineKeyboardButton(text="🔙 Admin panel", callback_data="back_to_admin", style="primary")])
     await call.message.answer(text, parse_mode="HTML", reply_markup=InlineKeyboardMarkup(inline_keyboard=rows))
     await call.answer()
 
@@ -927,7 +951,7 @@ async def del_uc_price(call: CallbackQuery):
         data["uc_prices"] = [p for p in prices if p["id"] != pid]
         await jb_write(data)
         await call.answer(f"✅ {item['uc_amount']} UC narxi o'chirildi!", show_alert=True)
-        await admin_uc_list(call)  # refresh list
+        await admin_uc_list(call)
     else:
         await call.answer("Topilmadi!", show_alert=True)
 
@@ -937,8 +961,8 @@ async def admin_clear_uc_ask(call: CallbackQuery):
         await call.answer("Ruxsat yo'q!", show_alert=True)
         return
     btn = InlineKeyboardMarkup(inline_keyboard=[[
-        InlineKeyboardButton(text="✅ Ha, o'chirish", callback_data="confirm_clear_uc"),
-        InlineKeyboardButton(text="❌ Yo'q", callback_data="back_to_admin"),
+        InlineKeyboardButton(text="✅ Ha, o'chirish", callback_data="confirm_clear_uc", style="danger"),
+        InlineKeyboardButton(text="❌ Yo'q", callback_data="back_to_admin", style="primary"),
     ]])
     await call.message.answer("⚠️ Barcha UC narxlarini o'chirasizmi?\nBu amalni qaytarib bo'lmaydi!", parse_mode="HTML", reply_markup=btn)
     await call.answer()
@@ -1001,10 +1025,10 @@ async def admin_stars_list(call: CallbackQuery):
     for item in prices:
         text += f"• {item['stars_amount']} Stars — {item['price']:,} so'm\n".replace(",", " ")
         rows.append([
-            InlineKeyboardButton(text=f"⭐ {item['stars_amount']} Stars — {item['price']:,} so'm".replace(",", " "), callback_data="stars_info"),
-            InlineKeyboardButton(text="🗑", callback_data=f"del_stars_price_{item['id']}"),
+            InlineKeyboardButton(text=f"⭐ {item['stars_amount']} Stars — {item['price']:,} so'm".replace(",", " "), callback_data="stars_info", style="primary"),
+            InlineKeyboardButton(text="🗑", callback_data=f"del_stars_price_{item['id']}", style="danger"),
         ])
-    rows.append([InlineKeyboardButton(text="🔙 Admin panel", callback_data="back_to_admin")])
+    rows.append([InlineKeyboardButton(text="🔙 Admin panel", callback_data="back_to_admin", style="primary")])
     await call.message.answer(text, parse_mode="HTML", reply_markup=InlineKeyboardMarkup(inline_keyboard=rows))
     await call.answer()
 
@@ -1028,8 +1052,8 @@ async def admin_clear_stars_ask(call: CallbackQuery):
         await call.answer("Ruxsat yo'q!", show_alert=True)
         return
     btn = InlineKeyboardMarkup(inline_keyboard=[[
-        InlineKeyboardButton(text="✅ Ha, o'chirish", callback_data="confirm_clear_stars"),
-        InlineKeyboardButton(text="❌ Yo'q", callback_data="back_to_admin"),
+        InlineKeyboardButton(text="✅ Ha, o'chirish", callback_data="confirm_clear_stars", style="danger"),
+        InlineKeyboardButton(text="❌ Yo'q", callback_data="back_to_admin", style="primary"),
     ]])
     await call.message.answer("⚠️ Barcha Stars narxlarini o'chirasizmi?\nBu amalni qaytarib bo'lmaydi!", parse_mode="HTML", reply_markup=btn)
     await call.answer()
@@ -1084,10 +1108,10 @@ async def admin_premium_list(call: CallbackQuery):
     for item in prices:
         text += f"• {item['duration']} — {item['price']:,} so'm\n".replace(",", " ")
         rows.append([
-            InlineKeyboardButton(text=f"💜 {item['duration']} — {item['price']:,} so'm".replace(",", " "), callback_data="premium_info"),
-            InlineKeyboardButton(text="🗑", callback_data=f"del_premium_price_{item['id']}"),
+            InlineKeyboardButton(text=f"💜 {item['duration']} — {item['price']:,} so'm".replace(",", " "), callback_data="premium_info", style="primary"),
+            InlineKeyboardButton(text="🗑", callback_data=f"del_premium_price_{item['id']}", style="danger"),
         ])
-    rows.append([InlineKeyboardButton(text="🔙 Admin panel", callback_data="back_to_admin")])
+    rows.append([InlineKeyboardButton(text="🔙 Admin panel", callback_data="back_to_admin", style="primary")])
     await call.message.answer(text, parse_mode="HTML", reply_markup=InlineKeyboardMarkup(inline_keyboard=rows))
     await call.answer()
 
@@ -1111,8 +1135,8 @@ async def admin_clear_premium_ask(call: CallbackQuery):
         await call.answer("Ruxsat yo'q!", show_alert=True)
         return
     btn = InlineKeyboardMarkup(inline_keyboard=[[
-        InlineKeyboardButton(text="✅ Ha, o'chirish", callback_data="confirm_clear_premium"),
-        InlineKeyboardButton(text="❌ Yo'q", callback_data="back_to_admin"),
+        InlineKeyboardButton(text="✅ Ha, o'chirish", callback_data="confirm_clear_premium", style="danger"),
+        InlineKeyboardButton(text="❌ Yo'q", callback_data="back_to_admin", style="primary"),
     ]])
     await call.message.answer("⚠️ Barcha Premium narxlarini o'chirasizmi?\nBu amalni qaytarib bo'lmaydi!", parse_mode="HTML", reply_markup=btn)
     await call.answer()
@@ -1242,7 +1266,7 @@ async def del_ch_step(call: CallbackQuery):
         await call.message.answer("Kanallar yo'q.")
         return
     btn = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text=f"🗑 O'chirish: {ch['channel_id']}", callback_data=f"delch_{ch['id']}")]
+        [InlineKeyboardButton(text=f"🗑 O'chirish: {ch['channel_id']}", callback_data=f"delch_{ch['id']}", style="danger")]
         for ch in channels
     ])
     await call.message.answer("Qaysi kanalni o'chirasiz?", reply_markup=btn)
@@ -1290,8 +1314,8 @@ async def approve_ad(call: CallbackQuery):
     user_id = ad["user_id"]
     me = await bot.get_me()
     btn = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="👤 Sotuvchi bilan aloqa", url=f"tg://user?id={user_id}")],
-        [InlineKeyboardButton(text="📢 Reklama berish", url=f"https://t.me/{me.username}?start=ad")]
+        [InlineKeyboardButton(text="👤 Sotuvchi bilan aloqa", url=f"tg://user?id={user_id}", style="primary")],
+        [InlineKeyboardButton(text="📢 Reklama berish", url=f"https://t.me/{me.username}?start=ad", style="success")]
     ])
 
     try:
