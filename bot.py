@@ -7,42 +7,42 @@ from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
 # --- KONFIGURATSIYA ---
 BOT_TOKEN = "8631309919:AAHmHJWlRqiXKBiMkrPIxvd1LyHrm6MPIvc"
-KASSA_ID = 46  # Dashboarddagi ID bilan bir xilligini tekshiring
-SECRET_KEY = "N2MxYjNkYmI4ZjdlYjVjMWYxZTM" # Bu yerga 'Secret Key' emas, 'API Key' qo'yib ko'ring
+# Professional API da Kassa ID odatda tokenga bog'langan bo'ladi, 
+# lekin hujjatda ko'rsatilmagani uchun faqat tokendan foydalanamiz.
+API_KEY = "N2MxYjNkYmI4ZjdlYjVjMWYxZTM" 
 
 logging.basicConfig(level=logging.INFO)
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 
-async def get_checkout_url(amount, order_id):
-    # API manzilini aniqlashtiring (kerak bo'lsa api.checkout.uz qilib ko'ring)
-    url = "https://api.checkout.uz/api/v1/payment/create"
+async def get_checkout_url(amount, description):
+    # Professional API hujjati bo'yicha URL
+    url = "https://checkout.uz/api/v1/create_payment"
     
     headers = {
-        "Authorization": f"Bearer {SECRET_KEY}",
+        "Authorization": f"Bearer {API_KEY}",
         "Content-Type": "application/json",
         "Accept": "application/json"
     }
     
+    # JSON hujjatidagi 'requestBody'ga asosan:
     payload = {
-        "amount": int(amount), # Tiyn emas, so'mda bo'lsa int(11500)
-        "order_id": str(order_id),
-        "kassa_id": int(KASSA_ID),
-        "description": f"Buyurtma #{order_id}"
+        "amount": int(amount),
+        "description": description
     }
 
     async with aiohttp.ClientSession() as session:
         try:
             async with session.post(url, json=payload, headers=headers, timeout=15) as response:
                 result = await response.json()
-                logging.info(f"API JAVOBI: {result}") # Terminalda bu qatorni kuzating!
+                logging.info(f"API JAVOBI: {result}")
                 
-                if response.status == 200 and result.get("status") == True:
-                    return result.get("payment_url")
+                # Hujjat bo'yicha status "success" bo'lishi kerak
+                if response.status == 200 and result.get("status") == "success":
+                    # Link 'payment' obyekti ichidagi '_url' kalitida keladi
+                    return result.get("payment", {}).get("_url")
                 else:
-                    # Xato sababini aniqroq ko'rsatish uchun
-                    error_msg = result.get('message', 'Nomaʼlum xato')
-                    logging.error(f"CHECKOUT XATOSI: {error_msg}")
+                    logging.error(f"API XATOSI: {result}")
                     return None
         except Exception as e:
             logging.error(f"ULANISH XATOSI: {e}")
@@ -50,24 +50,39 @@ async def get_checkout_url(amount, order_id):
 
 @dp.message(Command("start"))
 async def start_handler(message: types.Message):
-    amount = 11500 # So'm miqdori
-    order_id = f"ID_{message.from_user.id}_{int(asyncio.get_event_loop().time())}"
+    amount = 11500  # Skrinshotingizdagi summa
+    # Buyurtma ID skrinshotingizdagidek chiqishi uchun description ga yozamiz
+    order_id = f"#{15000 + message.from_user.id % 1000}" 
+    description = f"Buyurtma {order_id}"
     
     msg = await message.answer("⏳ To'lov havolasi yaratilmoqda...")
     
-    pay_url = await get_checkout_url(amount, order_id)
+    pay_url = await get_checkout_url(amount, description)
     
     if pay_url:
         keyboard = InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="💳 To'lov qilish", url=pay_url)]
         ])
-        await msg.edit_text(f"Hisobingiz: {amount} so'm.\nTo'lov qilish uchun pastdagi tugmani bosing:", reply_markup=keyboard)
+        await msg.edit_text(
+            f"💰 To'lov miqdori: {amount:,} so'm\n"
+            f"📝 Ta'rif: {description}\n\n"
+            f"To'lovni amalga oshirish uchun tugmani bosing:",
+            reply_markup=keyboard
+        )
     else:
-        # Terminalda chiqqan logga qarab bu xabarni o'zgartirishingiz mumkin
-        await msg.edit_text("❌ To'lov tizimida xatolik yuz berdi. Iltimos, keyinroq urunib ko'ring yoki administratorga murojaat qiling.")
+        await msg.edit_text(
+            "❌ To'lov tizimida xatolik.\n"
+            "Sababi: API kalit noto'g'ri yoki kassa hali tasdiqlanmagan.\n"
+            "Loglarni tekshiring!"
+        )
 
 async def main():
+    # Bot ishga tushganda eski xabarlarni o'qib yubormasligi uchun
+    await bot.delete_webhook(drop_pending_updates=True)
     await dp.start_polling(bot)
 
 if __name__ == '__main__':
-    asyncio.run(main())
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        print("Bot to'xtatildi")
